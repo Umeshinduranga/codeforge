@@ -4,6 +4,7 @@ import passport from 'passport';
 import GitHubStrategy from 'passport-github2';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { Server } from 'socket.io';
 
 dotenv.config();
 const app = express();
@@ -82,6 +83,22 @@ app.get('/', (req, res) => {
   res.send('CodeForge Backend Running');
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`);
+// Socket.io Setup
+const server = require('http').createServer(app);
+const io = new Server(server);
+
+io.on('connection', (socket) => {
+  console.log('A user connected:', socket.id);
+
+  socket.on('codeChange', (data) => {
+    socket.broadcast.emit('codeChange', data);
+  });
+
+  socket.on('disconnect', () => {
+    console.log('User disconnected:', socket.id);
+  });
+});
+
+server.listen(PORT, () => {
+  console.log(`Server running on port ${PORT} with Socket.io`);
 });
