@@ -1,10 +1,19 @@
 import express from 'express';
 import session from 'express-session';
 import passport from 'passport';
-import GitHubStrategy from 'passport-github2';
+import { Strategy as GitHubStrategy } from 'passport-github2'; // Explicitly import Strategy
 import cors from 'cors';
 import dotenv from 'dotenv';
 import { Server } from 'socket.io';
+import { Octokit } from '@octokit/rest';
+
+// Define User interface to include custom properties
+interface User {
+  githubId: string;
+  username: string;
+  avatarUrl?: string;
+  accessToken: string;
+}
 
 dotenv.config();
 const app = express();
@@ -23,17 +32,16 @@ app.use(
 app.use(passport.initialize());
 app.use(passport.session());
 
-// Passport GitHub Strategy (temporary in-memory user handling)
+// Passport GitHub Strategy
 passport.use(
-  new GitHubStrategy.Strategy(
+  new GitHubStrategy(
     {
       clientID: process.env.GITHUB_CLIENT_ID!,
       clientSecret: process.env.GITHUB_CLIENT_SECRET!,
       callbackURL: process.env.GITHUB_CALLBACK_URL!,
     },
     (accessToken: string, refreshToken: string, profile: any, done: any) => {
-      // Temporarily return profile without database
-      const user = {
+      const user: User = {
         githubId: profile.id,
         username: profile.username,
         avatarUrl: profile.photos?.[0]?.value,
@@ -44,17 +52,19 @@ passport.use(
   )
 );
 
+// Serialize user to store only the githubId in the session
 passport.serializeUser((user: any, done) => {
-  done(null, user.githubId);
+  done(null, (user as User).githubId); // Cast to User to access githubId
 });
-
+// Deserialize user from session ID, rehydrate with full user data (simplified)
 passport.deserializeUser((id: string, done) => {
-  // Temporarily return mock user without database
-  done(null, { githubId: id });
+  // In a real app, fetch from a database; here, we simulate with minimal data
+  const user: User = { githubId: id, username: 'temp', accessToken: '', avatarUrl: '' } as User;
+  done(null, user);
 });
 
 // Routes
-app.get('/auth/github', passport.authenticate('github', { scope: ['user:email'] }));
+app.get('/auth/github', passport.authenticate('github', { scope: ['user:email', 'repo'] }));
 
 app.get(
   '/auth/github/callback',
@@ -81,6 +91,43 @@ app.get('/logout', (req, res, next) => {
 
 app.get('/', (req, res) => {
   res.send('CodeForge Backend Running');
+});
+
+// GitHub API Endpoint
+app.post('/api/github/push', async (req, res) => {
+  if (!req.user || !(req.user as User).accessToken) {
+    return res.status(401).json({ message: 'Not authenticated' });
+  }
+
+  const { repo, filePath, content } = req.body;
+  const octokit = new Octokit({
+    auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || (req.user as User).accessToken,
+  });
+
+  try {
+    const [owner, repoName] = repo.split('/');
+    await octokit.repos.getContent({
+      owner,
+      repo: repoName,
+      path: filePath,
+    }).catch(async () => {
+      await octokit.repos.createOrUpdateFileContents({
+        owner,
+        repo: repoName,
+        path: filePath,
+        message: 'Update code from CodeForge',
+        content: Buffer.from(content).toString('base64'),
+        author: {
+          name: (req.user as User).username || 'Unknown',
+          email: `${(req.user as User).githubId || 'unknown'}@users.noreply.github.com`,
+        },
+      });
+    });
+    res.json({ message: 'Code pushed to GitHub successfully' });
+  } catch (error: any) {
+    console.error('GitHub push error:', error);
+    res.status(500).json({ message: 'Failed to push to GitHub', error: error.message });
+  }
 });
 
 // Socket.io Setup
