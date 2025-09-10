@@ -61,6 +61,7 @@ passport.serializeUser((user: any, done) => {
 passport.deserializeUser((id: string, done) => {
   // In a real app, fetch from a database; here, we simulate with minimal data
   const user: User = { githubId: id, username: 'temp', accessToken: '', avatarUrl: '' } as User;
+  // Note: In production, fetch the full user (including accessToken) from a store
   done(null, user);
 });
 
@@ -96,22 +97,33 @@ app.get('/', (req, res) => {
 
 // GitHub API Endpoint
 app.post('/api/github/push', async (req, res) => {
+  console.log('Push request received:', req.body);
   if (!req.user || !(req.user as User).accessToken) {
+    console.log('Authentication failed - user or accessToken missing:', req.user);
     return res.status(401).json({ message: 'Not authenticated' });
   }
 
   const { repo, filePath, content } = req.body;
+  const patToken = process.env.GITHUB_PERSONAL_ACCESS_TOKEN;
+  const oauthToken = (req.user as User).accessToken;
+  console.log('PAT available:', patToken ? 'Yes' : 'No');
+  console.log('OAuth token available:', oauthToken ? 'Yes' : 'No');
+  const usedToken = patToken || oauthToken;
+  console.log('Using token source:', patToken ? 'PAT' : 'OAuth');
+
   const octokit = new Octokit({
-    auth: process.env.GITHUB_PERSONAL_ACCESS_TOKEN || (req.user as User).accessToken,
+    auth: usedToken,
   });
 
   try {
     const [owner, repoName] = repo.split('/');
+    console.log(`Attempting to push to ${owner}/${repoName}/${filePath}`);
     await octokit.repos.getContent({
       owner,
       repo: repoName,
       path: filePath,
     }).catch(async () => {
+      console.log(`Creating/updating file ${filePath}`);
       await octokit.repos.createOrUpdateFileContents({
         owner,
         repo: repoName,
@@ -126,7 +138,7 @@ app.post('/api/github/push', async (req, res) => {
     });
     res.json({ message: 'Code pushed to GitHub successfully' });
   } catch (error: any) {
-    console.error('GitHub push error:', error);
+    console.error('GitHub push error:', error.message, error.response?.data);
     res.status(500).json({ message: 'Failed to push to GitHub', error: error.message });
   }
 });
