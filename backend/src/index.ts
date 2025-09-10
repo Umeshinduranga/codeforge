@@ -56,6 +56,7 @@ passport.use(
 passport.serializeUser((user: any, done) => {
   done(null, (user as User).githubId); // Cast to User to access githubId
 });
+
 // Deserialize user from session ID, rehydrate with full user data (simplified)
 passport.deserializeUser((id: string, done) => {
   // In a real app, fetch from a database; here, we simulate with minimal data
@@ -132,7 +133,13 @@ app.post('/api/github/push', async (req, res) => {
 
 // Socket.io Setup
 const server = require('http').createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+  cors: {
+    origin: 'http://localhost:3000',
+    methods: ['GET', 'POST'],
+    credentials: true,
+  },
+});
 
 io.on('connection', (socket) => {
   console.log('A user connected:', socket.id);
