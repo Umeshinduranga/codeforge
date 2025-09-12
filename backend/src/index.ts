@@ -22,18 +22,34 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+// Session middleware with in-memory store
+const sessionMiddleware = session({
+  secret: process.env.SESSION_SECRET || 'your-secret-key-change-in-production',
+  resave: false,
+  saveUninitialized: false,
+  cookie: {
+    secure: false, // Set to true in production with HTTPS
+    httpOnly: true,
+    maxAge: 1000 * 60 * 60 * 24, // 24 hours
+  },
+});
+
 // Middleware
-app.use(cors({ origin: 'http://localhost:3000', credentials: true }));
+app.use(cors({ 
+  origin: 'http://localhost:3000', 
+  credentials: true 
+}));
 app.use(express.json());
-app.use(
-  session({
-    secret: process.env.SESSION_SECRET!,
-    resave: false,
-    saveUninitialized: false,
-  })
-);
+app.use(sessionMiddleware);
 app.use(passport.initialize());
 app.use(passport.session());
+
+// Debug middleware to log session info
+app.use((req, res, next) => {
+  console.log('Session ID:', req.sessionID);
+  console.log('User in session:', req.user ? (req.user as User).username : 'None');
+  next();
+});
 
 // Passport GitHub Strategy
 passport.use(
@@ -62,20 +78,35 @@ passport.use(
 
 // Serialize user to store only the githubId in the session
 passport.serializeUser((user: any, done) => {
+  console.log('Serializing user:', (user as User).githubId);
   done(null, (user as User).githubId);
 });
 
 // Deserialize user from session ID, retrieve full user data from store
 passport.deserializeUser((id: string, done) => {
+  console.log('Deserializing user ID:', id);
   const user = userStore.get(id);
   if (user) {
-    console.log('User deserialized:', { githubId: id, username: user.username, hasToken: !!user.accessToken });
+    console.log('User deserialized successfully:', { githubId: id, username: user.username });
     done(null, user);
   } else {
     console.log('User not found in store:', id);
     done(new Error('User not found'), null);
   }
 });
+
+// Authentication check middleware
+const requireAuth = (req: any, res: any, next: any) => {
+  console.log('Auth check - User:', req.user ? (req.user as User).username : 'None');
+  if (req.user) {
+    next();
+  } else {
+    res.status(401).json({ 
+      message: 'Not authenticated. Please login with GitHub first.',
+      redirectUrl: '/auth/github'
+    });
+  }
+};
 
 // Routes
 app.get('/auth/github', passport.authenticate('github', { scope: ['user:email', 'repo'] }));
@@ -84,18 +115,29 @@ app.get(
   '/auth/github/callback',
   passport.authenticate('github', { failureRedirect: 'http://localhost:3000/login' }),
   (req, res) => {
-    console.log('GitHub callback successful, redirecting to frontend');
-    res.redirect('http://localhost:3000');
+    console.log('GitHub callback successful, user:', req.user);
+    res.redirect('http://localhost:3000/editor');
   }
 );
 
 app.get('/api/user', (req, res) => {
+  console.log('User info request - Session ID:', req.sessionID);
+  console.log('User in request:', req.user);
+  
   if (req.user) {
     const user = req.user as User;
     console.log('User info requested:', { githubId: user.githubId, hasToken: !!user.accessToken });
-    res.json(req.user);
+    res.json({
+      githubId: user.githubId,
+      username: user.username,
+      avatarUrl: user.avatarUrl,
+      isAuthenticated: true
+    });
   } else {
-    res.status(401).json({ message: 'Not authenticated' });
+    res.status(401).json({ 
+      message: 'Not authenticated',
+      isAuthenticated: false
+    });
   }
 });
 
@@ -110,7 +152,13 @@ app.get('/logout', (req, res, next) => {
       console.log('User removed from store:', userId);
     }
     
-    res.redirect('http://localhost:3000');
+    // Destroy session
+    req.session.destroy((err: any) => {
+      if (err) {
+        console.error('Session destroy error:', err);
+      }
+      res.redirect('http://localhost:3000');
+    });
   });
 });
 
@@ -118,17 +166,12 @@ app.get('/', (req, res) => {
   res.send('CodeForge Backend Running');
 });
 
-// GitHub API Endpoint
-app.post('/api/github/push', async (req, res) => {
+// GitHub API Endpoint with authentication middleware
+app.post('/api/github/push', requireAuth, async (req, res) => {
   console.log('Push request received:', req.body);
-  
-  if (!req.user) {
-    console.log('Authentication failed - no user in session');
-    return res.status(401).json({ message: 'Not authenticated' });
-  }
 
   const user = req.user as User;
-  console.log('Authenticated user:', { 
+  console.log('Authenticated user for push:', { 
     githubId: user.githubId, 
     username: user.username, 
     hasAccessToken: !!user.accessToken 
@@ -142,7 +185,7 @@ app.post('/api/github/push', async (req, res) => {
   const { repo, filePath, content } = req.body;
   
   // Validate required fields
-  if (!repo || !filePath || !content) {
+  if (!repo || !filePath || content === undefined) {
     return res.status(400).json({ message: 'Missing required fields: repo, filePath, content' });
   }
 
@@ -204,17 +247,17 @@ app.post('/api/github/push', async (req, res) => {
     res.json({ message: 'Code pushed to GitHub successfully' });
     
   } catch (error: any) {
-  console.error('GitHub push error:', {
-    message: error.message,
-    status: error.status,
-    response: error.response?.data
-  });
-  const errorDetails = error.response?.data?.message || error.message || 'Unknown error';
-  res.status(500).json({
-    message: 'Failed to push to GitHub',
-    error: errorDetails,
-    status: error.status
-  });
+    console.error('GitHub push error:', {
+      message: error.message,
+      status: error.status,
+      response: error.response?.data
+    });
+    const errorDetails = error.response?.data?.message || error.message || 'Unknown error';
+    res.status(500).json({
+      message: 'Failed to push to GitHub',
+      error: errorDetails,
+      status: error.status
+    });
   }
 });
 
@@ -228,18 +271,53 @@ const io = new Server(server, {
   },
 });
 
+// Share session with Socket.IO
+io.use((socket, next) => {
+  sessionMiddleware(socket.request as any, {} as any, next as any);
+});
+
+// Authenticate Socket.IO connection
+io.use((socket, next) => {
+  const req = socket.request as any;
+  console.log('Socket auth check - Session:', req.session?.passport?.user);
+  
+  if (req.session && req.session.passport && req.session.passport.user) {
+    const user = userStore.get(req.session.passport.user);
+    if (user) {
+      socket.data.user = user;
+      console.log('Socket authenticated for user:', user.username);
+      return next();
+    }
+  }
+  
+  // Allow connection even if not authenticated
+  console.log('Socket connection without authentication');
+  next();
+});
+
 io.on('connection', (socket) => {
-  console.log('A user connected:', socket.id);
+  const user = socket.data.user;
+  console.log('Socket connected:', user ? user.username : 'Anonymous', 'ID:', socket.id);
 
   socket.on('codeChange', (data) => {
-    socket.broadcast.emit('codeChange', data);
+    console.log('Code change from:', user ? user.username : 'Anonymous');
+    // Add user info to the broadcast
+    socket.broadcast.emit('codeChange', {
+      ...data,
+      user: user ? user.username : 'Anonymous'
+    });
   });
 
   socket.on('disconnect', () => {
-    console.log('User disconnected:', socket.id);
+    console.log('Socket disconnected:', user ? user.username : 'Anonymous');
   });
 });
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT} with Socket.io`);
+  console.log('Required environment variables:');
+  console.log('- GITHUB_CLIENT_ID:', process.env.GITHUB_CLIENT_ID ? 'Set' : 'Missing');
+  console.log('- GITHUB_CLIENT_SECRET:', process.env.GITHUB_CLIENT_SECRET ? 'Set' : 'Missing');
+  console.log('- GITHUB_CALLBACK_URL:', process.env.GITHUB_CALLBACK_URL ? 'Set' : 'Missing');
+  console.log('- SESSION_SECRET:', process.env.SESSION_SECRET ? 'Set' : 'Using default');
 });
