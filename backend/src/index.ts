@@ -204,17 +204,17 @@ app.post('/api/github/push', async (req, res) => {
     res.json({ message: 'Code pushed to GitHub successfully' });
     
   } catch (error: any) {
-    console.error('GitHub push error:', {
-      message: error.message,
-      status: error.status,
-      response: error.response?.data
-    });
-    
-    res.status(500).json({ 
-      message: 'Failed to push to GitHub', 
-      error: error.message,
-      details: error.response?.data?.message || 'Unknown error'
-    });
+  console.error('GitHub push error:', {
+    message: error.message,
+    status: error.status,
+    response: error.response?.data
+  });
+  const errorDetails = error.response?.data?.message || error.message || 'Unknown error';
+  res.status(500).json({
+    message: 'Failed to push to GitHub',
+    error: errorDetails,
+    status: error.status
+  });
   }
 });
 
