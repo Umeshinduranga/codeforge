@@ -1,80 +1,86 @@
 import React, { useState, useEffect, useRef } from 'react';
 import Editor from '@monaco-editor/react';
-import io from 'socket.io-client';
 import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import io from 'socket.io-client';
 
-function EditorPage() {
+const EditorPage = () => {
   const [code, setCode] = useState('// Write your code here');
-  const [repo, setRepo] = useState('umeshdurang/codeforge-test'); // Default repo
-  const [filePath, setFilePath] = useState('index.js'); // Default file path
-  const editorRef = useRef<any>(null);
-  const socket = io('http://localhost:5000');
+  const [repo, setRepo] = useState('Umeshinduranga/codeforge-test');
+  const [filePath, setFilePath] = useState('index.js');
+  const [lastEditor, setLastEditor] = useState('Anonymous');
+  const [username, setUsername] = useState('Umeshinduranga'); // Simple username for now
+  const socketRef = useRef<ReturnType<typeof io> | null>(null);
+  const navigate = useNavigate();
 
   useEffect(() => {
+    socketRef.current = io('http://localhost:5000', { withCredentials: true });
+    const socket = socketRef.current;
+
     socket.on('codeChange', (data) => {
-      if (editorRef.current && data.code !== code) {
-        setCode(data.code);
-      }
+      setCode(data.code);
+      setLastEditor(data.user || 'Anonymous');
     });
 
     return () => {
-      socket.disconnect();
+      if (socket) socket.disconnect();
     };
-  }, [code]);
+  }, []); // Empty array is fine since socket URL is static
 
   const handleEditorChange = (value: string | undefined) => {
-    if (value !== undefined && value !== code) {
-      setCode(value);
-      socket.emit('codeChange', { code: value });
+    setCode(value || '');
+    if (socketRef.current) {
+      socketRef.current.emit('codeChange', { code: value || '', user: username });
     }
   };
 
-  const handleEditorDidMount = (editor: any) => {
-    editorRef.current = editor;
-  };
-
-  const handlePushToGitHub = async () => {
+  const handlePush = async () => {
     try {
-      await axios.post('http://localhost:5000/api/github/push', {
-        repo,
-        filePath,
-        content: code,
-      }, { withCredentials: true });
-      alert('Code pushed to GitHub!');
-    } catch (error) {
-      console.error('Push error:', error);
-      alert('Failed to push to GitHub');
+      const response = await axios.post('http://localhost:5000/api/github/push', { repo, filePath, content: code }, { withCredentials: true });
+      alert(response.data.message || 'Code pushed successfully!');
+    } catch (error: any) {
+      alert(`Push failed: ${error.response?.data?.error || 'Unknown error'} (Status: ${error.response?.status})`);
     }
+  };
+
+  const handleAnalyze = async () => {
+    const response = await axios.post('http://localhost:5000/api/analyze', { code });
+    alert(response.data.warning || response.data.message);
   };
 
   return (
     <div>
-      <h2>Code Editor</h2>
-      <div>
-        <input
-          type="text"
-          value={repo}
-          onChange={(e) => setRepo(e.target.value)}
-          placeholder="Repository (e.g., umeshdurang/codeforge-test)"
-        />
-        <input
-          type="text"
-          value={filePath}
-          onChange={(e) => setFilePath(e.target.value)}
-          placeholder="File Path (e.g., index.js)"
-        />
-        <button onClick={handlePushToGitHub}>Push to GitHub</button>
-      </div>
+      <h1>Code Editor</h1>
+      <input
+        type="text"
+        value={repo}
+        onChange={(e) => setRepo(e.target.value)}
+        placeholder="Repository (e.g., Umeshinduranga/codeforge-test)"
+      />
+      <input
+        type="text"
+        value={filePath}
+        onChange={(e) => setFilePath(e.target.value)}
+        placeholder="File Path (e.g., index.js)"
+      />
+      <input
+        type="text"
+        value={username}
+        onChange={(e) => setUsername(e.target.value)}
+        placeholder="Your Username"
+      />
       <Editor
         height="500px"
         defaultLanguage="javascript"
         value={code}
         onChange={handleEditorChange}
-        onMount={handleEditorDidMount}
-        theme="vs-dark"
       />
+      <div>Last edit by: {lastEditor}</div>
+      <button onClick={handlePush}>Push to GitHub</button>
+      <button onClick={handleAnalyze}>Analyze Code</button>
+      <button onClick={() => navigate('/')}>Back to Home</button>
     </div>
   );
-}
+};
 
 export default EditorPage;
