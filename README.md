@@ -1,4 +1,4 @@
-# Code-reviwe: AI-Powered Code Review Platform
+# revit - AI-Powered Code Review Platform
 
 [![GitHub Repo stars](https://img.shields.io/github/stars/Umeshinduranga/code-review?style=social)](https://github.com/Umeshinduranga/code-review)
 [![GitHub issues](https://img.shields.io/github/issues/Umeshinduranga/code-review)](https://github.com/Umeshinduranga/code-review/issues)
@@ -30,8 +30,8 @@ This is a web-based platform designed to revolutionize how developers collaborat
 ## Installation
 1. **Clone the Repository**:
    ```
-   git clone https://github.com/Umeshinduranga/code-review.git
-   cd code-review
+   https://github.com/Umeshinduranga/revit.git
+   cd revit
    ```
 
 2. **Backend Setup**:
@@ -83,7 +83,7 @@ This is a web-based platform designed to revolutionize how developers collaborat
 
 ## Project Structure
 ```
-code-review/
+revit/
 ├── backend/
 │   ├── src/
 │   │   ├── index.ts          # Main server with routes and Socket.io
