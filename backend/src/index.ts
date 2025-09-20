@@ -166,7 +166,60 @@ app.get('/', (req, res) => {
   res.send('CodeForge Backend Running');
 });
 
-// GitHub API Endpoint with authentication middleware
+// GitHub API Endpoints with authentication middleware
+
+// List user repositories
+app.get('/api/github/repos', requireAuth, async (req, res) => {
+  console.log('Repository list requested');
+  
+  const user = req.user as User;
+  console.log('Authenticated user for repo list:', { 
+    githubId: user.githubId, 
+    username: user.username, 
+    hasAccessToken: !!user.accessToken 
+  });
+
+  if (!user.accessToken) {
+    console.log('Authentication failed - user accessToken missing');
+    return res.status(401).json({ message: 'Access token not available' });
+  }
+
+  try {
+    const octokit = new Octokit({
+      auth: user.accessToken,
+    });
+    
+    // Get repositories for the authenticated user
+    const { data: repos } = await octokit.repos.listForAuthenticatedUser({
+      sort: 'updated',
+      per_page: 100
+    });
+    
+    // Map the response to include only needed fields
+    const repoList = repos.map(repo => ({
+      id: repo.id,
+      name: repo.name,
+      full_name: repo.full_name,
+      description: repo.description,
+      html_url: repo.html_url,
+      default_branch: repo.default_branch,
+      owner: {
+        login: repo.owner.login,
+        avatar_url: repo.owner.avatar_url
+      }
+    }));
+
+    console.log(`Retrieved ${repoList.length} repositories for user`);
+    res.json(repoList);
+  } catch (error: any) {
+    console.error('Error fetching repositories:', error.message);
+    res.status(500).json({ 
+      message: 'Failed to fetch repositories',
+      error: error.message 
+    });
+  }
+});
+
 app.post('/api/github/push', requireAuth, async (req, res) => {
   console.log('Push request received:', req.body);
 
@@ -182,7 +235,7 @@ app.post('/api/github/push', requireAuth, async (req, res) => {
     return res.status(401).json({ message: 'Access token not available' });
   }
 
-  const { repo, filePath, content } = req.body;
+  const { repo, filePath, content, branch } = req.body;
   
   // Validate required fields
   if (!repo || !filePath || content === undefined) {
@@ -236,6 +289,7 @@ app.post('/api/github/push', requireAuth, async (req, res) => {
       path: filePath,
       message: `Update ${filePath} from CodeForge`,
       content: Buffer.from(content).toString('base64'),
+      branch: branch || 'main', // Use specified branch or default to main
       sha, // Include sha if updating existing file
       author: {
         name: user.username || 'CodeForge User',
@@ -255,6 +309,107 @@ app.post('/api/github/push', requireAuth, async (req, res) => {
     const errorDetails = error.response?.data?.message || error.message || 'Unknown error';
     res.status(500).json({
       message: 'Failed to push to GitHub',
+      error: errorDetails,
+      status: error.status
+    });
+  }
+});
+
+// Create a new 'revit' branch in selected repository
+app.post('/api/github/create-branch', requireAuth, async (req, res) => {
+  console.log('Branch creation request received:', req.body);
+  
+  const user = req.user as User;
+  console.log('Authenticated user for branch creation:', { 
+    username: user.username, 
+    hasAccessToken: !!user.accessToken 
+  });
+
+  if (!user.accessToken) {
+    console.log('Authentication failed - user accessToken missing');
+    return res.status(401).json({ message: 'Access token not available' });
+  }
+
+  const { repo } = req.body;
+  
+  // Validate required fields
+  if (!repo) {
+    return res.status(400).json({ message: 'Missing required field: repo' });
+  }
+
+  const octokit = new Octokit({
+    auth: user.accessToken,
+  });
+
+  try {
+    const [owner, repoName] = repo.split('/');
+    
+    if (!owner || !repoName) {
+      return res.status(400).json({ message: 'Invalid repo format. Expected: owner/repo' });
+    }
+
+    console.log(`Creating 'revit' branch in ${owner}/${repoName}`);
+    
+    // Get the default branch reference
+    const { data: repoData } = await octokit.repos.get({
+      owner,
+      repo: repoName
+    });
+    
+    const defaultBranch = repoData.default_branch;
+    console.log(`Default branch for ${repoName} is ${defaultBranch}`);
+    
+    // Get the SHA of the latest commit on the default branch
+    const { data: refData } = await octokit.git.getRef({
+      owner,
+      repo: repoName,
+      ref: `heads/${defaultBranch}`,
+    });
+    
+    const sha = refData.object.sha;
+    console.log(`Latest commit SHA: ${sha}`);
+    
+    try {
+      // Check if the branch already exists
+      await octokit.git.getRef({
+        owner,
+        repo: repoName,
+        ref: 'heads/revit',
+      });
+      
+      console.log('Branch "revit" already exists');
+      return res.json({ 
+        message: 'Branch "revit" already exists',
+        branchName: 'revit',
+        fullRepo: repo,
+        defaultBranch
+      });
+    } catch (error) {
+      // Branch doesn't exist, so create it
+      await octokit.git.createRef({
+        owner,
+        repo: repoName,
+        ref: 'refs/heads/revit',
+        sha,
+      });
+      
+      console.log('Successfully created "revit" branch');
+      res.json({ 
+        message: 'Branch "revit" created successfully', 
+        branchName: 'revit',
+        fullRepo: repo,
+        defaultBranch
+      });
+    }
+  } catch (error: any) {
+    console.error('GitHub branch creation error:', {
+      message: error.message,
+      status: error.status,
+      response: error.response?.data
+    });
+    const errorDetails = error.response?.data?.message || error.message || 'Unknown error';
+    res.status(500).json({
+      message: 'Failed to create branch',
       error: errorDetails,
       status: error.status
     });
