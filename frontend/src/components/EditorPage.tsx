@@ -11,13 +11,31 @@ interface User {
   isAuthenticated: boolean;
 }
 
+interface Repository {
+  id: number;
+  name: string;
+  full_name: string;
+  description?: string;
+  html_url: string;
+  default_branch: string;
+  owner: {
+    login: string;
+    avatar_url: string;
+  };
+}
+
 const EditorPage = () => {
   const [code, setCode] = useState('// Write your code here');
-  const [repo, setRepo] = useState('Umeshinduranga/codeforge-test');
+  const [repo, setRepo] = useState('');
   const [filePath, setFilePath] = useState('index.js');
   const [lastEditor, setLastEditor] = useState('Anonymous');
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [repositories, setRepositories] = useState<Repository[]>([]);
+  const [selectedRepo, setSelectedRepo] = useState<Repository | null>(null);
+  const [branch, setBranch] = useState('main');
+  const [isBranchCreating, setIsBranchCreating] = useState(false);
+  const [branchCreated, setBranchCreated] = useState(false);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const navigate = useNavigate();
 
@@ -26,10 +44,11 @@ const EditorPage = () => {
     checkAuthStatus();
   }, []);
 
-  // Initialize socket connection
+  // Initialize socket connection and fetch repositories when user is authenticated
   useEffect(() => {
     if (user?.isAuthenticated) {
       initializeSocket();
+      fetchRepositories();
     }
     return () => {
       if (socketRef.current) {
@@ -37,6 +56,15 @@ const EditorPage = () => {
       }
     };
   }, [user]);
+  
+  // Update repo state when a repository is selected
+  useEffect(() => {
+    if (selectedRepo) {
+      setRepo(selectedRepo.full_name);
+      setBranch(selectedRepo.default_branch);
+      setBranchCreated(false);
+    }
+  }, [selectedRepo]);
 
   const checkAuthStatus = async () => {
     try {
@@ -49,6 +77,19 @@ const EditorPage = () => {
       setUser(null);
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const fetchRepositories = async () => {
+    try {
+      const response = await axios.get('http://localhost:5000/api/github/repos', {
+        withCredentials: true
+      });
+      setRepositories(response.data);
+      console.log('Repositories fetched:', response.data.length);
+    } catch (error) {
+      console.error('Failed to fetch repositories:', error);
+      alert('Failed to fetch repositories. Please try again.');
     }
   };
 
@@ -95,16 +136,56 @@ const EditorPage = () => {
     window.location.href = 'http://localhost:5000/logout';
   };
 
+  const createRevitBranch = async () => {
+    if (!selectedRepo || !repo) {
+      alert('Please select a repository first');
+      return;
+    }
+
+    setIsBranchCreating(true);
+    try {
+      const response = await axios.post(
+        'http://localhost:5000/api/github/create-branch',
+        { repo },
+        { withCredentials: true }
+      );
+      
+      setBranch('revit');
+      setBranchCreated(true);
+      alert(response.data.message || 'Branch "revit" created successfully!');
+    } catch (error: any) {
+      if (error.response?.status === 401) {
+        alert('Authentication required. Please login with GitHub first.');
+        handleLogin();
+      } else {
+        alert(`Branch creation failed: ${error.response?.data?.error || error.response?.data?.message || 'Unknown error'}`);
+      }
+      console.error('Branch creation error:', error.response?.data);
+    } finally {
+      setIsBranchCreating(false);
+    }
+  };
+
   const handlePush = async () => {
     if (!user?.isAuthenticated) {
       alert('Please login with GitHub first to push code');
       return;
     }
 
+    if (!repo) {
+      alert('Please select a repository first');
+      return;
+    }
+
     try {
       const response = await axios.post(
         'http://localhost:5000/api/github/push', 
-        { repo, filePath, content: code }, 
+        { 
+          repo, 
+          filePath, 
+          content: code,
+          branch // Include the branch in the request
+        }, 
         { withCredentials: true }
       );
       alert(response.data.message || 'Code pushed successfully!');
@@ -177,22 +258,109 @@ const EditorPage = () => {
         </div>
       )}
 
-      <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-        <input
-          type="text"
-          value={repo}
-          onChange={(e) => setRepo(e.target.value)}
-          placeholder="Repository (e.g., Umeshinduranga/codeforge-test)"
-          style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-        />
-        <input
-          type="text"
-          value={filePath}
-          onChange={(e) => setFilePath(e.target.value)}
-          placeholder="File Path (e.g., index.js)"
-          style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-        />
-      </div>
+      {user?.isAuthenticated && repositories.length > 0 && (
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ marginBottom: '10px' }}>
+            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+              Select Repository:
+            </label>
+            <select 
+              value={selectedRepo?.full_name || ''} 
+              onChange={(e) => {
+                const selected = repositories.find(r => r.full_name === e.target.value);
+                setSelectedRepo(selected || null);
+              }}
+              style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+            >
+              <option value="">-- Select a repository --</option>
+              {repositories.map(repo => (
+                <option key={repo.id} value={repo.full_name}>
+                  {repo.full_name} ({repo.default_branch})
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {selectedRepo && (
+            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
+              <div style={{ flex: 3 }}>
+                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
+                  Branch:
+                </label>
+                <div style={{ 
+                  display: 'flex', 
+                  alignItems: 'center', 
+                  padding: '8px', 
+                  border: '1px solid #ccc', 
+                  borderRadius: '4px',
+                  backgroundColor: '#f9f9f9'
+                }}>
+                  <span>{branch}</span>
+                  {branch === 'revit' && (
+                    <span style={{ 
+                      marginLeft: '10px',
+                      backgroundColor: '#0366d6',
+                      color: 'white',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                      fontSize: '12px'
+                    }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ flex: 2 }}>
+                <button 
+                  onClick={createRevitBranch} 
+                  disabled={isBranchCreating || branch === 'revit'} 
+                  style={{ 
+                    width: '100%',
+                    marginTop: '20px',
+                    backgroundColor: branch === 'revit' ? '#2ea44f' : '#0366d6', 
+                    color: 'white', 
+                    border: 'none', 
+                    padding: '8px', 
+                    borderRadius: '4px',
+                    cursor: isBranchCreating || branch === 'revit' ? 'not-allowed' : 'pointer'
+                  }}
+                >
+                  {isBranchCreating ? 'Creating...' : branch === 'revit' ? 'Using "revit" Branch' : 'Create "revit" Branch'}
+                </button>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: 'flex', gap: '10px' }}>
+            <input
+              type="text"
+              value={filePath}
+              onChange={(e) => setFilePath(e.target.value)}
+              placeholder="File Path (e.g., index.js)"
+              style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+            />
+          </div>
+        </div>
+      )}
+      
+      {!user?.isAuthenticated && (
+        <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
+          <input
+            type="text"
+            value={repo}
+            onChange={(e) => setRepo(e.target.value)}
+            placeholder="Repository (e.g., Umeshinduranga/codeforge-test)"
+            style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+          />
+          <input
+            type="text"
+            value={filePath}
+            onChange={(e) => setFilePath(e.target.value)}
+            placeholder="File Path (e.g., index.js)"
+            style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+          />
+        </div>
+      )}
 
       <Editor
         height="500px"
@@ -214,17 +382,17 @@ const EditorPage = () => {
       <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
         <button 
           onClick={handlePush}
-          disabled={!user?.isAuthenticated}
+          disabled={!user?.isAuthenticated || !repo}
           style={{ 
-            backgroundColor: user?.isAuthenticated ? '#238636' : '#ccc', 
+            backgroundColor: user?.isAuthenticated && repo ? '#238636' : '#ccc', 
             color: 'white', 
             border: 'none', 
             padding: '10px 20px', 
             borderRadius: '6px',
-            cursor: user?.isAuthenticated ? 'pointer' : 'not-allowed'
+            cursor: user?.isAuthenticated && repo ? 'pointer' : 'not-allowed'
           }}
         >
-          Push to GitHub
+          Push to {repo ? `${repo} (${branch})` : 'GitHub'}
         </button>
         <button 
           onClick={handleAnalyze}
