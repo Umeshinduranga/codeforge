@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
+import styles from './EditorPage.module.css';
 
 interface User {
   githubId: string;
@@ -25,7 +26,7 @@ interface Repository {
 }
 
 const EditorPage = () => {
-  const [code, setCode] = useState('// Write your code here');
+  const [code, setCode] = useState('// Welcome to CodeForge!\n// Start typing your code here...\n\nfunction hello() {\n  console.log("Hello, World!");\n}\n\nhello();');
   const [repo, setRepo] = useState('');
   const [filePath, setFilePath] = useState('index.js');
   const [lastEditor, setLastEditor] = useState('Anonymous');
@@ -210,216 +211,207 @@ const EditorPage = () => {
   };
 
   if (isLoading) {
-    return <div style={{ padding: '20px' }}>Loading...</div>;
+    return (
+      <div className={styles.editorPage}>
+        <div className={styles.container}>
+          <div className={styles.loadingContainer}>
+            <div className={styles.spinner}></div>
+            <p className={styles.loadingText}>Loading CodeForge...</p>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
-    <div style={{ padding: '20px' }}>
-      <div style={{ marginBottom: '20px', display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <h1>Code Editor</h1>
-        
-        {user?.isAuthenticated ? (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginLeft: 'auto' }}>
-            <span>Welcome, {user.username}!</span>
-            {user.avatarUrl && (
-              <img 
-                src={user.avatarUrl} 
-                alt="Avatar" 
-                style={{ width: '30px', height: '30px', borderRadius: '50%' }} 
-              />
-            )}
-            <button onClick={handleLogout}>Logout</button>
-          </div>
-        ) : (
-          <div style={{ marginLeft: 'auto' }}>
-            <button onClick={handleLogin} style={{ 
-              backgroundColor: '#238636', 
-              color: 'white', 
-              border: 'none', 
-              padding: '8px 16px', 
-              borderRadius: '6px',
-              cursor: 'pointer'
-            }}>
-              Login with GitHub
-            </button>
+    <div className={styles.editorPage}>
+      <div className={styles.container}>
+        {!user?.isAuthenticated && (
+          <div className={styles.authRequired}>
+            <span className={styles.authRequiredIcon}>⚠️</span>
+            <div>
+              <strong className={styles.authRequiredText}>Authentication Required</strong>
+              <p className={styles.authRequiredText}>
+                You need to login with GitHub to push code to repositories and access advanced features.
+              </p>
+            </div>
           </div>
         )}
-      </div>
 
-      {!user?.isAuthenticated && (
-        <div style={{ 
-          backgroundColor: '#fff3cd', 
-          border: '1px solid #ffeaa7', 
-          borderRadius: '4px', 
-          padding: '10px', 
-          marginBottom: '20px' 
-        }}>
-          <strong>Notice:</strong> You need to login with GitHub to push code to repositories.
-        </div>
-      )}
-
-      {user?.isAuthenticated && repositories.length > 0 && (
-        <div style={{ marginBottom: '20px' }}>
-          <div style={{ marginBottom: '10px' }}>
-            <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-              Select Repository:
-            </label>
-            <select 
-              value={selectedRepo?.full_name || ''} 
-              onChange={(e) => {
-                const selected = repositories.find(r => r.full_name === e.target.value);
-                setSelectedRepo(selected || null);
-              }}
-              style={{ width: '100%', padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-            >
-              <option value="">-- Select a repository --</option>
-              {repositories.map(repo => (
-                <option key={repo.id} value={repo.full_name}>
-                  {repo.full_name} ({repo.default_branch})
-                </option>
-              ))}
-            </select>
-          </div>
-
-          {selectedRepo && (
-            <div style={{ display: 'flex', gap: '10px', alignItems: 'center', marginBottom: '10px' }}>
-              <div style={{ flex: 3 }}>
-                <label style={{ display: 'block', marginBottom: '5px', fontWeight: 'bold' }}>
-                  Branch:
+        <div className={styles.controlsSection}>
+          {user?.isAuthenticated && repositories.length > 0 && (
+            <>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  Select Repository
                 </label>
-                <div style={{ 
-                  display: 'flex', 
-                  alignItems: 'center', 
-                  padding: '8px', 
-                  border: '1px solid #ccc', 
-                  borderRadius: '4px',
-                  backgroundColor: '#f9f9f9'
-                }}>
-                  <span>{branch}</span>
-                  {branch === 'revit' && (
-                    <span style={{ 
-                      marginLeft: '10px',
-                      backgroundColor: '#0366d6',
-                      color: 'white',
-                      padding: '2px 8px',
-                      borderRadius: '10px',
-                      fontSize: '12px'
-                    }}>
-                      Active
-                    </span>
-                  )}
-                </div>
-              </div>
-              <div style={{ flex: 2 }}>
-                <button 
-                  onClick={createRevitBranch} 
-                  disabled={isBranchCreating || branch === 'revit'} 
-                  style={{ 
-                    width: '100%',
-                    marginTop: '20px',
-                    backgroundColor: branch === 'revit' ? '#2ea44f' : '#0366d6', 
-                    color: 'white', 
-                    border: 'none', 
-                    padding: '8px', 
-                    borderRadius: '4px',
-                    cursor: isBranchCreating || branch === 'revit' ? 'not-allowed' : 'pointer'
+                <select 
+                  value={selectedRepo?.full_name || ''} 
+                  onChange={(e) => {
+                    const selected = repositories.find(r => r.full_name === e.target.value);
+                    setSelectedRepo(selected || null);
                   }}
+                  className={styles.select}
                 >
-                  {isBranchCreating ? 'Creating...' : branch === 'revit' ? 'Using "revit" Branch' : 'Create "revit" Branch'}
-                </button>
+                  <option value="">-- Select a repository --</option>
+                  {repositories.map(repo => (
+                    <option key={repo.id} value={repo.full_name}>
+                      {repo.full_name} ({repo.default_branch})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {selectedRepo && (
+                <div className={styles.branchControls}>
+                  <div className={styles.branchInfo}>
+                    <label className={styles.label}>
+                      Active Branch
+                    </label>
+                    <div className={styles.branchDisplay}>
+                      <span className={styles.branchName}>{branch}</span>
+                      {branch === 'revit' && (
+                        <span className={styles.activeBadge}>
+                          Active
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <button 
+                    onClick={createRevitBranch} 
+                    disabled={isBranchCreating || branch === 'revit'} 
+                    className={`${styles.branchButton} ${branch === 'revit' ? styles.branchButtonActive : ''}`}
+                  >
+                    {isBranchCreating ? (
+                      <>
+                        <span className={styles.smallSpinner}></span>
+                        Creating...
+                      </>
+                    ) : branch === 'revit' ? (
+                      'Using "revit" Branch'
+                    ) : (
+                      'Create "revit" Branch'
+                    )}
+                  </button>
+                </div>
+              )}
+
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  File Path
+                </label>
+                <input
+                  type="text"
+                  value={filePath}
+                  onChange={(e) => setFilePath(e.target.value)}
+                  placeholder="e.g., src/index.js, components/App.tsx"
+                  className={styles.input}
+                />
+              </div>
+            </>
+          )}
+          
+          {!user?.isAuthenticated && (
+            <div className={styles.inputRow}>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  Repository
+                </label>
+                <input
+                  type="text"
+                  value={repo}
+                  onChange={(e) => setRepo(e.target.value)}
+                  placeholder="e.g., username/repository-name"
+                  className={styles.input}
+                />
+              </div>
+              <div className={styles.formGroup}>
+                <label className={styles.label}>
+                  File Path
+                </label>
+                <input
+                  type="text"
+                  value={filePath}
+                  onChange={(e) => setFilePath(e.target.value)}
+                  placeholder="e.g., index.js"
+                  className={styles.input}
+                />
               </div>
             </div>
           )}
+        </div>
 
-          <div style={{ display: 'flex', gap: '10px' }}>
-            <input
-              type="text"
-              value={filePath}
-              onChange={(e) => setFilePath(e.target.value)}
-              placeholder="File Path (e.g., index.js)"
-              style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
+        <div className={styles.editorContainer}>
+          <div className={styles.editorWrapper}>
+            <Editor
+              height="500px"
+              defaultLanguage="javascript"
+              value={code}
+              onChange={handleEditorChange}
+              theme="vs-dark"
+              options={{
+                fontSize: 14,
+                lineHeight: 1.6,
+                minimap: { enabled: false },
+                scrollBeyondLastLine: false,
+                wordWrap: 'on',
+                automaticLayout: true,
+                padding: { top: 16, bottom: 16 },
+                suggestOnTriggerCharacters: true,
+                quickSuggestions: true,
+                folding: true,
+                foldingHighlight: true,
+                renderLineHighlight: 'all',
+                smoothScrolling: true,
+                cursorBlinking: 'smooth',
+                cursorSmoothCaretAnimation: true,
+                scrollbar: {
+                  useShadows: false,
+                  verticalScrollbarSize: 14,
+                  horizontalScrollbarSize: 14,
+                  alwaysConsumeMouseWheel: false
+                }
+              }}
             />
           </div>
+          
+          <div className={styles.lastEditor}>
+            Last edit by: <strong>{lastEditor}</strong>
+          </div>
         </div>
-      )}
-      
-      {!user?.isAuthenticated && (
-        <div style={{ marginBottom: '20px', display: 'flex', gap: '10px' }}>
-          <input
-            type="text"
-            value={repo}
-            onChange={(e) => setRepo(e.target.value)}
-            placeholder="Repository (e.g., Umeshinduranga/codeforge-test)"
-            style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-          />
-          <input
-            type="text"
-            value={filePath}
-            onChange={(e) => setFilePath(e.target.value)}
-            placeholder="File Path (e.g., index.js)"
-            style={{ flex: 1, padding: '8px', border: '1px solid #ccc', borderRadius: '4px' }}
-          />
+
+        <div className={styles.actionButtons}>
+          <button 
+            onClick={handlePush}
+            disabled={!user?.isAuthenticated || !repo}
+            className={`${styles.actionButton} ${styles.pushButton}`}
+          >
+            <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+            </svg>
+            Push to {repo ? `${repo} (${branch})` : 'GitHub'}
+          </button>
+          
+          <button 
+            onClick={handleAnalyze}
+            className={`${styles.actionButton} ${styles.analyzeButton}`}
+          >
+            <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            Analyze Code
+          </button>
+          
+          <button 
+            onClick={() => navigate('/')}
+            className={`${styles.actionButton} ${styles.backButton}`}
+          >
+            <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 19l-7-7m0 0l7-7m-7 7h18" />
+            </svg>
+            Back to Home
+          </button>
         </div>
-      )}
-
-      <Editor
-        height="500px"
-        defaultLanguage="javascript"
-        value={code}
-        onChange={handleEditorChange}
-        theme="vs-dark"
-      />
-      
-      <div style={{ 
-        marginTop: '10px', 
-        marginBottom: '10px', 
-        fontSize: '14px', 
-        color: '#666' 
-      }}>
-        Last edit by: {lastEditor}
-      </div>
-
-      <div style={{ display: 'flex', gap: '10px', marginTop: '20px' }}>
-        <button 
-          onClick={handlePush}
-          disabled={!user?.isAuthenticated || !repo}
-          style={{ 
-            backgroundColor: user?.isAuthenticated && repo ? '#238636' : '#ccc', 
-            color: 'white', 
-            border: 'none', 
-            padding: '10px 20px', 
-            borderRadius: '6px',
-            cursor: user?.isAuthenticated && repo ? 'pointer' : 'not-allowed'
-          }}
-        >
-          Push to {repo ? `${repo} (${branch})` : 'GitHub'}
-        </button>
-        <button 
-          onClick={handleAnalyze}
-          style={{ 
-            backgroundColor: '#0969da', 
-            color: 'white', 
-            border: 'none', 
-            padding: '10px 20px', 
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
-        >
-          Analyze Code
-        </button>
-        <button 
-          onClick={() => navigate('/')}
-          style={{ 
-            backgroundColor: '#6c757d', 
-            color: 'white', 
-            border: 'none', 
-            padding: '10px 20px', 
-            borderRadius: '6px',
-            cursor: 'pointer'
-          }}
-        >
-          Back to Home
-        </button>
       </div>
     </div>
   );
