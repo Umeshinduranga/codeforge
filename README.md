@@ -6,6 +6,17 @@
 
 **AI-powered code review with real-time collaboration and bug prediction 📌**
 
+## 🚀 Quick Start (30 seconds)
+
+```bash
+git clone https://github.com/Umeshinduranga/revit.git
+cd revit/frontend
+npm install
+npm start
+```
+
+Then open **http://localhost:3000** in your browser!
+
 This is a web-based platform designed to revolutionize how developers collaborate on code reviews. It builds on traditional tools like GitHub Pull Requests by integrating machine learning for proactive bug detection, real-time editing, and privacy-focused federated learning. Whether you're a team debugging a complex merge or a solo developer simulating runtime errors, CodeForge saves time and reduces errors.
 
 ## Features
@@ -27,47 +38,97 @@ This is a web-based platform designed to revolutionize how developers collaborat
 - GitHub account (for OAuth and testing pushes)
 - MongoDB (local or Atlas for cloud)
 
-## Installation
+## Quick Start (Merged Setup)
+
+> **⚡ NEW: Both frontend and backend now run from a single command!**
+
 1. **Clone the Repository**:
-   ```
-   https://github.com/Umeshinduranga/revit.git
+   ```bash
+   git clone https://github.com/Umeshinduranga/revit.git
    cd revit
    ```
 
-2. **Backend Setup**:
-   ```
-   cd backend
-   yarn install
-   ```
-   - Create a `.env` file in `backend/`:
-     ```
-     PORT=5000
-     MONGODB_URI=mongodb://localhost:27017/codeforge
-     SESSION_SECRET=your_random_secret_string  # Generate with: node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
-     GITHUB_CLIENT_ID=your_github_client_id
-     GITHUB_CLIENT_SECRET=your_github_client_secret
-     GITHUB_CALLBACK_URL=http://localhost:5000/auth/github/callback
-     GITHUB_PERSONAL_ACCESS_TOKEN=your_pat_here  # Optional fallback for pushes
-     ```
-   - Set up GitHub OAuth App:
-     - Go to https://github.com/settings/applications > New OAuth App.
-     - Homepage URL: `http://localhost:3000`
-     - Authorization callback URL: `http://localhost:5000/auth/github/callback`
-     - Copy Client ID and Secret to `.env`.
-
-3. **Frontend Setup**:
-   ```
-   cd ../frontend
-   yarn install
+2. **Navigate to Frontend Directory**:
+   ```bash
+   cd frontend
    ```
 
-4. **Start the Servers**:
-   - Backend: `cd backend && yarn start` (runs on http://localhost:5000).
-   - Frontend: `cd frontend && yarn start` (runs on http://localhost:3000).
+3. **Install All Dependencies** (frontend + backend):
+   ```bash
+   npm install
+   ```
+
+4. **Start Both Servers**:
+   ```bash
+   npm start
+   ```
+   This single command will start:
+   - **Backend server** on http://localhost:5000
+   - **Frontend development server** on http://localhost:3000
+
+5. **Open Your Browser**:
+   - Visit http://localhost:3000 to use the application
+   - Backend API available at http://localhost:5000
+
+## Environment Setup
+
+The `.env` file is already configured in the `frontend/` directory with:
+```env
+REACT_APP_PORT=3000
+SERVER_PORT=5000
+MONGODB_URI=mongodb://localhost:27017/codeforge
+SESSION_SECRET=mysecretkey123
+GITHUB_CLIENT_ID=your_github_client_id
+GITHUB_CLIENT_SECRET=your_github_client_secret
+GITHUB_CALLBACK_URL=http://localhost:5000/auth/github/callback
+GITHUB_PERSONAL_ACCESS_TOKEN=your_pat_here
+```
+
+**To set up GitHub OAuth**:
+1. Go to https://github.com/settings/applications > New OAuth App
+2. Homepage URL: `http://localhost:3000`
+3. Authorization callback URL: `http://localhost:5000/auth/github/callback`
+4. Copy Client ID and Secret to the `.env` file
+
+## Available Scripts
+
+From the `frontend/` directory:
+
+- `npm start` - **Runs both frontend and backend servers**
+- `npm run client` - Runs only the React development server
+- `npm run server` - Runs only the backend server
+- `npm run build` - Builds the frontend for production
+- `npm run build-server` - Builds the backend TypeScript files
 
 5. **Database Setup** (Optional for MVP):
    - Install MongoDB locally or use MongoDB Atlas (free tier).
    - Update `MONGODB_URI` in `.env` if using Atlas.
+
+## How to Run
+
+### Step-by-Step:
+
+1. **Clone and Setup**:
+   ```bash
+   git clone https://github.com/Umeshinduranga/revit.git
+   cd revit/frontend
+   npm install
+   ```
+
+2. **Start the Application**:
+   ```bash
+   npm start
+   ```
+
+3. **Access the Application**:
+   - **Frontend**: http://localhost:3000
+   - **Backend API**: http://localhost:5000
+
+### Development Features:
+- ✅ **Hot Reloading**: Both frontend and backend restart automatically on file changes
+- ✅ **Real-time Collaboration**: Multiple users can edit simultaneously
+- ✅ **GitHub Integration**: Login with GitHub OAuth and push code directly
+- ✅ **Socket.io**: Instant synchronization between users
 
 ## Usage
 1. **Login**: Visit http://localhost:3000 and click "Login with GitHub".
@@ -81,22 +142,23 @@ This is a web-based platform designed to revolutionize how developers collaborat
 - In another tab, see the change instantly.
 - Push to `Umeshinduranga/test-repo`—check GitHub for the new `index.js` file.
 
-## Project Structure
+## Project Structure (Merged Setup)
 ```
 revit/
-├── backend/
+├── backend/                  # Legacy backend (deprecated)
+├── frontend/                 # Main development directory
 │   ├── src/
-│   │   ├── index.ts          # Main server with routes and Socket.io
-│   │   └── models/           # User schemas (MongoDB)
-│   ├── .env                  # Environment variables
-│   └── package.json          # Backend dependencies
-├── frontend/
-│   ├── src/
+│   │   ├── backend/          # Express server & API
+│   │   │   ├── index.ts      # Main server with routes and Socket.io
+│   │   │   └── models/       # User schemas (MongoDB)
 │   │   ├── components/
 │   │   │   └── EditorPage.tsx # Code editor with push and analyze
 │   │   ├── App.tsx           # Main app with routing
 │   │   └── index.tsx         # React entry point
-│   └── package.json          # Frontend dependencies
+│   ├── .env                  # Environment variables
+│   ├── package.json          # Combined frontend + backend dependencies
+│   ├── tsconfig.json         # Frontend TypeScript config
+│   └── tsconfig.backend.json # Backend TypeScript config
 ├── docs/                     # Documentation
 └── README.md                 # This file
 ```
