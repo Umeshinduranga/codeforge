@@ -104,25 +104,6 @@ From the `frontend/` directory:
    - Install MongoDB locally or use MongoDB Atlas (free tier).
    - Update `MONGODB_URI` in `.env` if using Atlas.
 
-## How to Run
-
-### Step-by-Step:
-
-1. **Clone and Setup**:
-   ```bash
-   git clone https://github.com/Umeshinduranga/revit.git
-   cd revit/frontend
-   npm install
-   ```
-
-2. **Start the Application**:
-   ```bash
-   npm start
-   ```
-
-3. **Access the Application**:
-   - **Frontend**: http://localhost:3000
-   - **Backend API**: http://localhost:5000
 
 ### Development Features:
 - ✅ **Hot Reloading**: Both frontend and backend restart automatically on file changes
