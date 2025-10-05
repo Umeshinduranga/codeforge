@@ -3,6 +3,7 @@ import Editor from '@monaco-editor/react';
 import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
+import FileBrowser from './FileBrowser';
 import styles from './EditorPage.module.css';
 
 interface User {
@@ -37,6 +38,7 @@ const EditorPage = () => {
   const [branch, setBranch] = useState('main');
   const [isBranchCreating, setIsBranchCreating] = useState(false);
   const [branchCreated, setBranchCreated] = useState(false);
+  const [showFileBrowser, setShowFileBrowser] = useState(false);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const navigate = useNavigate();
 
@@ -210,6 +212,69 @@ const EditorPage = () => {
     }
   };
 
+  const handleFileSelect = (filePath: string, content: string) => {
+    setFilePath(filePath);
+    setCode(content);
+    setShowFileBrowser(false);
+  };
+
+  const getEditorLanguage = (filePath: string) => {
+    const extension = filePath.split('.').pop()?.toLowerCase();
+    
+    switch (extension) {
+      case 'js':
+      case 'jsx':
+        return 'javascript';
+      case 'ts':
+      case 'tsx':
+        return 'typescript';
+      case 'py':
+        return 'python';
+      case 'java':
+        return 'java';
+      case 'cpp':
+      case 'c':
+        return 'cpp';
+      case 'cs':
+        return 'csharp';
+      case 'php':
+        return 'php';
+      case 'rb':
+        return 'ruby';
+      case 'go':
+        return 'go';
+      case 'rs':
+        return 'rust';
+      case 'html':
+        return 'html';
+      case 'css':
+        return 'css';
+      case 'scss':
+        return 'scss';
+      case 'json':
+        return 'json';
+      case 'xml':
+        return 'xml';
+      case 'md':
+        return 'markdown';
+      case 'yml':
+      case 'yaml':
+        return 'yaml';
+      case 'sql':
+        return 'sql';
+      default:
+        return 'javascript';
+    }
+  };
+
+  const openFileBrowser = () => {
+    if (!selectedRepo) {
+      alert('Please select a repository first');
+      return;
+    }
+    setShowFileBrowser(true);
+  };
+
   if (isLoading) {
     return (
       <div className={styles.editorPage}>
@@ -300,13 +365,26 @@ const EditorPage = () => {
                 <label className={styles.label}>
                   File Path
                 </label>
-                <input
-                  type="text"
-                  value={filePath}
-                  onChange={(e) => setFilePath(e.target.value)}
-                  placeholder="e.g., src/index.js, components/App.tsx"
-                  className={styles.input}
-                />
+                <div className={styles.filePathContainer}>
+                  <input
+                    type="text"
+                    value={filePath}
+                    onChange={(e) => setFilePath(e.target.value)}
+                    placeholder="e.g., src/index.js, components/App.tsx"
+                    className={styles.input}
+                  />
+                  <button
+                    onClick={openFileBrowser}
+                    className={styles.browseButton}
+                    disabled={!selectedRepo}
+                    title="Browse repository files"
+                  >
+                    <svg fill="none" stroke="currentColor" viewBox="0 0 24 24" width="16" height="16">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-5l-2-2H5a2 2 0 00-2 2z" />
+                    </svg>
+                    Browse Files
+                  </button>
+                </div>
               </div>
             </>
           )}
@@ -345,7 +423,7 @@ const EditorPage = () => {
           <div className={styles.editorWrapper}>
             <Editor
               height="500px"
-              defaultLanguage="javascript"
+              language={getEditorLanguage(filePath)}
               value={code}
               onChange={handleEditorChange}
               theme="vs-dark"
@@ -364,7 +442,7 @@ const EditorPage = () => {
                 renderLineHighlight: 'all',
                 smoothScrolling: true,
                 cursorBlinking: 'smooth',
-                cursorSmoothCaretAnimation: true,
+                cursorSmoothCaretAnimation: 'on',
                 scrollbar: {
                   useShadows: false,
                   verticalScrollbarSize: 14,
@@ -412,6 +490,15 @@ const EditorPage = () => {
             Back to Home
           </button>
         </div>
+
+        {/* File Browser Modal */}
+        {showFileBrowser && selectedRepo && (
+          <FileBrowser
+            repository={selectedRepo}
+            onFileSelect={handleFileSelect}
+            onClose={() => setShowFileBrowser(false)}
+          />
+        )}
       </div>
     </div>
   );
