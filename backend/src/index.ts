@@ -315,6 +315,143 @@ app.post('/api/github/push', requireAuth, async (req, res) => {
   }
 });
 
+// Get repository contents (files and folders)
+app.get('/api/github/contents/:owner/:repo', requireAuth, async (req, res) => {
+  console.log('Repository contents request received');
+  
+  const user = req.user as User;
+  const { owner, repo } = req.params;
+  const { path = '' } = req.query;
+
+  if (!user.accessToken) {
+    console.log('Authentication failed - user accessToken missing');
+    return res.status(401).json({ message: 'Access token not available' });
+  }
+
+  try {
+    const octokit = new Octokit({
+      auth: user.accessToken,
+    });
+
+    console.log(`Fetching contents for ${owner}/${repo}${path ? `/${path}` : ''}`);
+    
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: path as string,
+    });
+
+    // Handle both single files and directory listings
+    if (Array.isArray(data)) {
+      // It's a directory - return the list of contents
+      const contents = data.map(item => ({
+        name: item.name,
+        path: item.path,
+        type: item.type, // 'file' or 'dir'
+        size: item.size,
+        sha: item.sha,
+        download_url: item.download_url
+      }));
+      
+      console.log(`Retrieved ${contents.length} items from directory`);
+      res.json(contents);
+    } else {
+      // It's a single file - check if it has file-specific properties
+      if ('content' in data && 'encoding' in data) {
+        res.json({
+          name: data.name,
+          path: data.path,
+          type: data.type,
+          size: data.size,
+          content: data.content || '',
+          encoding: data.encoding || 'utf-8',
+          sha: data.sha,
+          download_url: data.download_url
+        });
+      } else {
+        // Handle other file types (symlinks, etc.)
+        res.json({
+          name: data.name,
+          path: data.path,
+          type: data.type,
+          size: data.size,
+          content: '',
+          encoding: 'utf-8',
+          sha: data.sha,
+          download_url: data.download_url || null
+        });
+      }
+    }
+  } catch (error: any) {
+    console.error('Error fetching repository contents:', error.message);
+    res.status(error.status || 500).json({ 
+      message: 'Failed to fetch repository contents',
+      error: error.message 
+    });
+  }
+});
+
+// Get file content from repository
+app.get('/api/github/file/:owner/:repo/*', requireAuth, async (req, res) => {
+  console.log('File content request received');
+  
+  const user = req.user as User;
+  const { owner, repo } = req.params;
+  // Extract the file path from the URL - everything after /api/github/file/:owner/:repo/
+  const fullPath = req.path;
+  const pathSegments = fullPath.split('/');
+  const filePathIndex = pathSegments.indexOf('file') + 3; // Skip 'api', 'github', 'file', owner, repo
+  const filePath = pathSegments.slice(filePathIndex).join('/');
+
+  if (!user.accessToken) {
+    console.log('Authentication failed - user accessToken missing');
+    return res.status(401).json({ message: 'Access token not available' });
+  }
+
+  try {
+    const octokit = new Octokit({
+      auth: user.accessToken,
+    });
+
+    console.log(`Fetching file content for ${owner}/${repo}/${filePath}`);
+    
+    const { data } = await octokit.repos.getContent({
+      owner,
+      repo,
+      path: filePath,
+    });
+
+    // Ensure it's a file, not a directory
+    if (Array.isArray(data)) {
+      return res.status(400).json({ message: 'Path is a directory, not a file' });
+    }
+
+    if (data.type !== 'file') {
+      return res.status(400).json({ message: 'Path is not a file' });
+    }
+
+    // Decode the content if it's base64 encoded
+    let content = '';
+    if (data.encoding === 'base64' && data.content) {
+      content = Buffer.from(data.content, 'base64').toString('utf-8');
+    }
+
+    res.json({
+      name: data.name,
+      path: data.path,
+      content: content,
+      size: data.size,
+      sha: data.sha
+    });
+  } catch (error: any) {
+    console.error('Error fetching file content:', error.message);
+    res.status(error.status || 500).json({ 
+      message: 'Failed to fetch file content',
+      error: error.message 
+    });
+  }
+});
+
 // Create a new 'revit' branch in selected repository
 app.post('/api/github/create-branch', requireAuth, async (req, res) => {
   console.log('Branch creation request received:', req.body);
