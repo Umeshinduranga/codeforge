@@ -41,19 +41,62 @@ const FileBrowser: React.FC<FileBrowserProps> = ({ repository, onFileSelect, onC
     setIsLoading(true);
     setError(null);
 
+    console.log(`Fetching contents for: ${repository.owner.login}/${repository.name}, path: "${path}"`);
+    
     try {
-      const response = await axios.get(
-        `http://localhost:5000/api/github/contents/${repository.owner.login}/${repository.name}`,
-        { 
-          params: { path },
-          withCredentials: true 
-        }
-      );
+      const url = `http://localhost:5000/api/github/contents/${repository.owner.login}/${repository.name}`;
+      console.log('Request URL:', url);
+      console.log('Request params:', { path });
+      
+      const response = await axios.get(url, { 
+        params: { path },
+        withCredentials: true 
+      });
+      
+      console.log('Response received:', response.data);
       
       setContents(Array.isArray(response.data) ? response.data : [response.data]);
     } catch (error: any) {
       console.error('Failed to fetch repository contents:', error);
-      setError(error.response?.data?.message || 'Failed to load repository contents');
+      console.error('Error details:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url
+      });
+      
+      let errorMessage = 'Failed to load repository contents';
+      
+      if (error.response) {
+        // Server responded with error status
+        const status = error.response.status;
+        const data = error.response.data;
+        
+        switch (status) {
+          case 401:
+            errorMessage = 'Authentication required. Please login again.';
+            break;
+          case 403:
+            errorMessage = 'Access denied. Check repository permissions.';
+            break;
+          case 404:
+            errorMessage = 'Repository not found or path does not exist.';
+            break;
+          case 500:
+            errorMessage = data?.message || 'Server error occurred.';
+            break;
+          default:
+            errorMessage = data?.message || data?.error || `HTTP ${status} error`;
+        }
+      } else if (error.request) {
+        // Network error
+        errorMessage = 'Network error. Please check if the backend server is running on port 5000.';
+      } else {
+        // Other error
+        errorMessage = error.message || 'Unknown error occurred';
+      }
+      
+      setError(errorMessage);
       setContents([]);
     } finally {
       setIsLoading(false);
@@ -71,8 +114,11 @@ const FileBrowser: React.FC<FileBrowserProps> = ({ repository, onFileSelect, onC
       try {
         setIsLoading(true);
         const response = await axios.get(
-          `http://localhost:5000/api/github/file/${repository.owner.login}/${repository.name}/${item.path}`,
-          { withCredentials: true }
+          `http://localhost:5000/api/github/file/${repository.owner.login}/${repository.name}`,
+          { 
+            params: { path: item.path },
+            withCredentials: true 
+          }
         );
         
         onFileSelect(item.path, response.data.content || '');
