@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Repository Browser Test</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 20px;
+            background: #1a1a1a;
+            color: #fff;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+        }
+        button {
+            background: #007cba;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 10px;
+            border-radius: 5px;
+            cursor: pointer;
+        }
+        button:hover {
+            background: #005a8b;
+        }
+        .result {
+            background: #2a2a2a;
+            padding: 20px;
+            border-radius: 5px;
+            margin: 20px 0;
+            min-height: 100px;
+        }
+        .error {
+            color: #ff6b6b;
+        }
+        .success {
+            color: #51cf66;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Repository Browser Test</h1>
+        
+        <div>
+            <button onclick="testBackendConnection()">Test Backend Connection</button>
+            <button onclick="testGitHubAuth()">Test GitHub Authentication</button>
+            <button onclick="testRepoContents()">Test Repository Contents</button>
+        </div>
+        
+        <div id="result" class="result">
+            Click a button above to test the functionality
+        </div>
+    </div>
+
+    <script>
+        const resultDiv = document.getElementById('result');
+        
+        function showResult(message, isError = false) {
+            resultDiv.innerHTML = `<pre class="${isError ? 'error' : 'success'}">${message}</pre>`;
+        }
+        
+        async function testBackendConnection() {
+            try {
+                showResult('Testing backend connection...');
+                const response = await fetch('http://localhost:5000/api/user', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult(`✅ Backend connected successfully!\nUser: ${JSON.stringify(data, null, 2)}`);
+                } else {
+                    const errorData = await response.text();
+                    showResult(`❌ Backend error (${response.status}): ${errorData}`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Connection failed: ${error.message}\n\nMake sure backend server is running on port 5000`, true);
+            }
+        }
+        
+        async function testGitHubAuth() {
+            try {
+                showResult('Testing GitHub authentication...');
+                const response = await fetch('http://localhost:5000/api/github/test', {
+                    credentials: 'include'
+                });
+                
+                if (response.ok) {
+                    const data = await response.json();
+                    showResult(`✅ GitHub auth successful!\n${JSON.stringify(data, null, 2)}`);
+                } else {
+                    const errorData = await response.text();
+                    showResult(`❌ GitHub auth failed (${response.status}): ${errorData}\n\nTry logging in: http://localhost:5000/auth/github`, true);
+                }
+            } catch (error) {
+                showResult(`❌ Auth test failed: ${error.message}`, true);
+            }
+        }
+        
+        async function testRepoContents() {
+            // First get repos
+            try {
+                showResult('Getting repositories...');
+                const reposResponse = await fetch('http://localhost:5000/api/github/repos', {
+                    credentials: 'include'
+                });
+                
+                if (!reposResponse.ok) {
+                    throw new Error(`Failed to get repositories: ${reposResponse.status}`);
+                }
+                
+                const repos = await reposResponse.json();
+                
+                if (repos.length === 0) {
+                    showResult('❌ No repositories found. Make sure you have repositories in your GitHub account.', true);
+                    return;
+                }
+                
+                // Test with first repo
+                const testRepo = repos[0];
+                showResult(`Testing with repository: ${testRepo.full_name}...`);
+                
+                const contentsResponse = await fetch(`http://localhost:5000/api/github/contents/${testRepo.owner.login}/${testRepo.name}`, {
+                    credentials: 'include'
+                });
+                
+                if (contentsResponse.ok) {
+                    const contents = await contentsResponse.json();
+                    showResult(`✅ Repository contents loaded successfully!\nRepository: ${testRepo.full_name}\nFiles/Folders found: ${contents.length}\n\n${JSON.stringify(contents.slice(0, 5), null, 2)}`);
+                } else {
+                    const errorData = await contentsResponse.text();
+                    showResult(`❌ Failed to load repository contents (${contentsResponse.status}): ${errorData}`, true);
+                }
+                
+            } catch (error) {
+                showResult(`❌ Repository test failed: ${error.message}`, true);
+            }
+        }
+    </script>
+</body>
+</html>
