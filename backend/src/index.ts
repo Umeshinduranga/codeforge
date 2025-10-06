@@ -318,10 +318,18 @@ app.post('/api/github/push', requireAuth, async (req, res) => {
 // Get repository contents (files and folders)
 app.get('/api/github/contents/:owner/:repo', requireAuth, async (req, res) => {
   console.log('Repository contents request received');
+  console.log('Request params:', { owner: req.params.owner, repo: req.params.repo });
+  console.log('Query params:', req.query);
   
   const user = req.user as User;
   const { owner, repo } = req.params;
   const { path = '' } = req.query;
+
+  console.log('User info:', { 
+    githubId: user.githubId, 
+    username: user.username, 
+    hasAccessToken: !!user.accessToken 
+  });
 
   if (!user.accessToken) {
     console.log('Authentication failed - user accessToken missing');
@@ -383,25 +391,30 @@ app.get('/api/github/contents/:owner/:repo', requireAuth, async (req, res) => {
       }
     }
   } catch (error: any) {
-    console.error('Error fetching repository contents:', error.message);
+    console.error('Error fetching repository contents:', {
+      message: error.message,
+      status: error.status,
+      response: error.response?.data,
+      url: error.config?.url,
+      owner,
+      repo,
+      path: path as string
+    });
     res.status(error.status || 500).json({ 
       message: 'Failed to fetch repository contents',
-      error: error.message 
+      error: error.message,
+      details: error.response?.data || 'No additional details available'
     });
   }
 });
 
-// Get file content from repository
-app.get('/api/github/file/:owner/:repo/*', requireAuth, async (req, res) => {
+// Get file content from repository using query parameter instead of wildcard
+app.get('/api/github/file/:owner/:repo', requireAuth, async (req, res) => {
   console.log('File content request received');
   
   const user = req.user as User;
   const { owner, repo } = req.params;
-  // Extract the file path from the URL - everything after /api/github/file/:owner/:repo/
-  const fullPath = req.path;
-  const pathSegments = fullPath.split('/');
-  const filePathIndex = pathSegments.indexOf('file') + 3; // Skip 'api', 'github', 'file', owner, repo
-  const filePath = pathSegments.slice(filePathIndex).join('/');
+  const filePath = req.query.path as string; // Get file path from query parameter
 
   if (!user.accessToken) {
     console.log('Authentication failed - user accessToken missing');
@@ -448,6 +461,43 @@ app.get('/api/github/file/:owner/:repo/*', requireAuth, async (req, res) => {
     res.status(error.status || 500).json({ 
       message: 'Failed to fetch file content',
       error: error.message 
+    });
+  }
+});
+
+// Test endpoint to check GitHub API connectivity
+app.get('/api/github/test', requireAuth, async (req, res) => {
+  console.log('GitHub API test endpoint called');
+  
+  const user = req.user as User;
+  
+  try {
+    const octokit = new Octokit({
+      auth: user.accessToken,
+    });
+
+    // Test basic GitHub API access
+    const { data: userInfo } = await octokit.users.getAuthenticated();
+    
+    res.json({
+      message: 'GitHub API connection successful',
+      user: {
+        login: userInfo.login,
+        name: userInfo.name,
+        public_repos: userInfo.public_repos
+      }
+    });
+  } catch (error: any) {
+    console.error('GitHub API test failed:', {
+      message: error.message,
+      status: error.status,
+      response: error.response?.data
+    });
+    
+    res.status(500).json({
+      message: 'GitHub API test failed',
+      error: error.message,
+      details: error.response?.data
     });
   }
 });
