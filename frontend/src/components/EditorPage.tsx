@@ -4,6 +4,7 @@ import axios from 'axios';
 import { useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import FileBrowser from './FileBrowser';
+import AnalysisModal from './AnalysisModal';
 import styles from './EditorPage.module.css';
 
 interface User {
@@ -39,7 +40,11 @@ const EditorPage = () => {
   const [isBranchCreating, setIsBranchCreating] = useState(false);
   const [branchCreated, setBranchCreated] = useState(false);
   const [showFileBrowser, setShowFileBrowser] = useState(false);
+  const [showAnalysisModal, setShowAnalysisModal] = useState(false);
+  const [analysisResult, setAnalysisResult] = useState(null);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
+  const editorRef = useRef<any>(null);
   const navigate = useNavigate();
 
   // Check authentication status on component mount
@@ -204,11 +209,34 @@ const EditorPage = () => {
   };
 
   const handleAnalyze = async () => {
+    if (!editorRef.current) return;
+    
+    setIsAnalyzing(true);
     try {
-      const response = await axios.post('http://localhost:5000/api/analyze', { code });
-      alert(response.data.warning || response.data.message);
+      const code = editorRef.current.getValue();
+      const token = localStorage.getItem('token');
+      
+      const response = await fetch('http://localhost:5000/api/analyze', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${token}`
+        },
+        body: JSON.stringify({ code })
+      });
+      
+      if (response.ok) {
+        const result = await response.json();
+        setAnalysisResult(result.analysis);
+        setShowAnalysisModal(true);
+      } else {
+        alert('Analysis failed. Please try again.');
+      }
     } catch (error) {
-      alert('Analysis service not available');
+      console.error('Analysis error:', error);
+      alert('Analysis service unavailable');
+    } finally {
+      setIsAnalyzing(false);
     }
   };
 
@@ -482,6 +510,7 @@ const EditorPage = () => {
               language={getEditorLanguage(filePath)}
               value={code}
               onChange={handleEditorChange}
+              onMount={(editor) => { editorRef.current = editor; }}
               theme="vs-dark"
               options={{
                 fontSize: 14,
@@ -528,12 +557,13 @@ const EditorPage = () => {
           
           <button 
             onClick={handleAnalyze}
-            className={`${styles.actionButton} ${styles.analyzeButton}`}
+            disabled={isAnalyzing}
+            className={`${styles.actionButton} ${styles.analyzeButton} ${isAnalyzing ? styles.analyzing : ''}`}
           >
             <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
             </svg>
-            Analyze Code
+            {isAnalyzing ? 'Analyzing...' : 'Analyze Code'}
           </button>
           
           <button 
@@ -553,6 +583,14 @@ const EditorPage = () => {
             repository={selectedRepo}
             onFileSelect={handleFileSelect}
             onClose={() => setShowFileBrowser(false)}
+          />
+        )}
+
+        {/* Analysis Modal */}
+        {showAnalysisModal && analysisResult && (
+          <AnalysisModal
+            analysis={analysisResult}
+            onClose={() => setShowAnalysisModal(false)}
           />
         )}
       </div>
