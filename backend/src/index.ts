@@ -108,6 +108,331 @@ const requireAuth = (req: any, res: any, next: any) => {
   }
 };
 
+// Code Analysis Function
+function analyzeCode(code: string) {
+  const lines = code.split('\n');
+  const nonEmptyLines = lines.filter(line => line.trim().length > 0);
+  const comments = lines.filter(line => line.trim().startsWith('//') || line.trim().startsWith('/*') || line.trim().startsWith('*'));
+  
+  // Detect programming language
+  const language = detectLanguage(code);
+  
+  // Basic metrics
+  const metrics = {
+    linesOfCode: lines.length,
+    nonEmptyLines: nonEmptyLines.length,
+    comments: comments.length,
+    commentRatio: comments.length / Math.max(nonEmptyLines.length, 1),
+    averageLineLength: nonEmptyLines.reduce((sum, line) => sum + line.length, 0) / Math.max(nonEmptyLines.length, 1),
+    language: language
+  };
+
+  // Code quality issues detection
+  const issues = detectIssues(code, language);
+  
+  // Suggestions based on analysis
+  const suggestions = generateSuggestions(code, metrics, issues);
+  
+  // Calculate overall score
+  const score = calculateScore(metrics, issues);
+  
+  // Complexity analysis
+  const complexity = analyzeComplexity(code, language);
+
+  return {
+    metrics,
+    issues,
+    suggestions,
+    score,
+    complexity,
+    summary: generateSummary(metrics, issues, score)
+  };
+}
+
+// Detect programming language based on code patterns
+function detectLanguage(code: string): string {
+  if (code.includes('function ') || code.includes('const ') || code.includes('let ') || code.includes('var ')) {
+    if (code.includes('interface ') || code.includes(': string') || code.includes(': number')) {
+      return 'TypeScript';
+    }
+    return 'JavaScript';
+  }
+  if (code.includes('def ') || code.includes('import ') && code.includes('from ')) {
+    return 'Python';
+  }
+  if (code.includes('public class ') || code.includes('private ') || code.includes('System.out.')) {
+    return 'Java';
+  }
+  if (code.includes('#include') || code.includes('int main(')) {
+    return 'C/C++';
+  }
+  if (code.includes('using System') || code.includes('Console.WriteLine')) {
+    return 'C#';
+  }
+  if (code.includes('<?php') || code.includes('echo ')) {
+    return 'PHP';
+  }
+  return 'JavaScript'; // Default fallback
+}
+
+// Detect code quality issues
+function detectIssues(code: string, language: string) {
+  const issues = [];
+  const lines = code.split('\n');
+
+  // Check for common issues across languages
+  lines.forEach((line, index) => {
+    const lineNum = index + 1;
+    const trimmed = line.trim();
+
+    // Long lines
+    if (line.length > 120) {
+      issues.push({
+        type: 'style',
+        severity: 'warning',
+        line: lineNum,
+        message: 'Line too long (>120 characters)',
+        suggestion: 'Consider breaking this line into multiple lines'
+      });
+    }
+
+    // TODO comments
+    if (trimmed.toLowerCase().includes('todo') || trimmed.toLowerCase().includes('fixme')) {
+      issues.push({
+        type: 'maintenance',
+        severity: 'info',
+        line: lineNum,
+        message: 'TODO/FIXME comment found',
+        suggestion: 'Consider addressing this technical debt'
+      });
+    }
+
+    // Console logs in JavaScript/TypeScript
+    if (language.includes('Script') && trimmed.includes('console.log')) {
+      issues.push({
+        type: 'debugging',
+        severity: 'warning',
+        line: lineNum,
+        message: 'Console.log statement found',
+        suggestion: 'Remove debug statements before production'
+      });
+    }
+
+    // Missing semicolons in JavaScript/TypeScript
+    if (language.includes('Script') && trimmed.length > 0 && !trimmed.endsWith(';') && 
+        !trimmed.endsWith('{') && !trimmed.endsWith('}') && !trimmed.startsWith('//') &&
+        !trimmed.includes('if ') && !trimmed.includes('else') && !trimmed.includes('for ') &&
+        !trimmed.includes('while ') && !trimmed.includes('function ')) {
+      issues.push({
+        type: 'syntax',
+        severity: 'info',
+        line: lineNum,
+        message: 'Missing semicolon',
+        suggestion: 'Add semicolon at the end of the statement'
+      });
+    }
+
+    // Deeply nested code
+    const indentLevel = (line.match(/^\s*/)?.[0].length || 0) / 2;
+    if (indentLevel > 4) {
+      issues.push({
+        type: 'complexity',
+        severity: 'warning',
+        line: lineNum,
+        message: 'Deeply nested code detected',
+        suggestion: 'Consider extracting this into a separate function'
+      });
+    }
+
+    // Magic numbers
+    const numbers = trimmed.match(/\b\d{2,}\b/g);
+    if (numbers && !trimmed.includes('//')) {
+      numbers.forEach(num => {
+        if (parseInt(num) > 10 && !['100', '200', '404', '500'].includes(num)) {
+          issues.push({
+            type: 'maintainability',
+            severity: 'info',
+            line: lineNum,
+            message: `Magic number detected: ${num}`,
+            suggestion: 'Consider using a named constant'
+          });
+        }
+      });
+    }
+  });
+
+  // Language-specific issues
+  if (language === 'JavaScript' || language === 'TypeScript') {
+    // Check for == instead of ===
+    if (code.includes(' == ') && !code.includes(' === ')) {
+      const equalLines = lines.filter((line, index) => line.includes(' == ')).length;
+      if (equalLines > 0) {
+        issues.push({
+          type: 'best-practice',
+          severity: 'warning',
+          line: lines.findIndex(line => line.includes(' == ')) + 1,
+          message: 'Use === instead of == for strict equality',
+          suggestion: 'Replace == with === for type-safe comparisons'
+        });
+      }
+    }
+
+    // Check for var usage
+    if (code.includes('var ')) {
+      issues.push({
+        type: 'best-practice',
+        severity: 'info',
+        line: lines.findIndex(line => line.includes('var ')) + 1,
+        message: 'Avoid using var, prefer let or const',
+        suggestion: 'Use let for variables that change, const for constants'
+      });
+    }
+  }
+
+  return issues;
+}
+
+// Generate improvement suggestions
+function generateSuggestions(code: string, metrics: any, issues: any[]) {
+  const suggestions = [];
+
+  // Comment ratio suggestions
+  if (metrics.commentRatio < 0.1) {
+    suggestions.push({
+      type: 'documentation',
+      priority: 'medium',
+      message: 'Consider adding more comments to explain complex logic',
+      impact: 'Improves code readability and maintainability'
+    });
+  }
+
+  // Code length suggestions
+  if (metrics.linesOfCode > 100) {
+    suggestions.push({
+      type: 'structure',
+      priority: 'medium',
+      message: 'Consider breaking this into smaller, more focused functions',
+      impact: 'Improves code organization and testability'
+    });
+  }
+
+  // Performance suggestions based on detected patterns
+  if (code.includes('for (') && code.includes('.length')) {
+    suggestions.push({
+      type: 'performance',
+      priority: 'low',
+      message: 'Cache array length in loops to avoid repeated property access',
+      impact: 'Minor performance improvement in tight loops'
+    });
+  }
+
+  // Security suggestions
+  if (code.includes('eval(') || code.includes('innerHTML')) {
+    suggestions.push({
+      type: 'security',
+      priority: 'high',
+      message: 'Avoid using eval() or innerHTML with user input',
+      impact: 'Prevents potential XSS vulnerabilities'
+    });
+  }
+
+  // Error handling suggestions
+  if (!code.includes('try') && !code.includes('catch') && code.includes('async ')) {
+    suggestions.push({
+      type: 'error-handling',
+      priority: 'medium',
+      message: 'Add error handling for async operations',
+      impact: 'Improves application reliability'
+    });
+  }
+
+  return suggestions;
+}
+
+// Calculate overall code quality score
+function calculateScore(metrics: any, issues: any[]): number {
+  let score = 100;
+
+  // Deduct points for issues
+  issues.forEach(issue => {
+    switch (issue.severity) {
+      case 'error':
+        score -= 10;
+        break;
+      case 'warning':
+        score -= 5;
+        break;
+      case 'info':
+        score -= 2;
+        break;
+    }
+  });
+
+  // Adjust for code metrics
+  if (metrics.commentRatio < 0.05) score -= 10;
+  if (metrics.commentRatio > 0.3) score += 5;
+  if (metrics.averageLineLength > 100) score -= 5;
+
+  return Math.max(0, Math.min(100, score));
+}
+
+// Analyze code complexity
+function analyzeComplexity(code: string, language: string) {
+  const lines = code.split('\n');
+  let cyclomaticComplexity = 1; // Base complexity
+
+  lines.forEach(line => {
+    const trimmed = line.trim().toLowerCase();
+    
+    // Count decision points
+    if (trimmed.includes('if ') || trimmed.includes('else if')) cyclomaticComplexity++;
+    if (trimmed.includes('while ') || trimmed.includes('for ')) cyclomaticComplexity++;
+    if (trimmed.includes('switch ') || trimmed.includes('case ')) cyclomaticComplexity++;
+    if (trimmed.includes('catch ')) cyclomaticComplexity++;
+    if (trimmed.includes('&&') || trimmed.includes('||')) {
+      cyclomaticComplexity += (line.match(/&&|\|\|/g) || []).length;
+    }
+  });
+
+  const functionCount = (code.match(/function\s+\w+|=>\s*{|def\s+\w+/g) || []).length;
+  const maxNesting = Math.max(...lines.map(line => (line.match(/^\s*/)?.[0].length || 0) / 2));
+
+  return {
+    cyclomatic: cyclomaticComplexity,
+    functions: functionCount,
+    maxNesting: maxNesting,
+    complexity: cyclomaticComplexity <= 10 ? 'Low' : cyclomaticComplexity <= 20 ? 'Medium' : 'High'
+  };
+}
+
+// Generate analysis summary
+function generateSummary(metrics: any, issues: any[], score: number) {
+  const errorCount = issues.filter(i => i.severity === 'error').length;
+  const warningCount = issues.filter(i => i.severity === 'warning').length;
+  const infoCount = issues.filter(i => i.severity === 'info').length;
+
+  let quality = 'Excellent';
+  if (score < 80) quality = 'Good';
+  if (score < 60) quality = 'Fair';
+  if (score < 40) quality = 'Poor';
+
+  return {
+    quality: quality,
+    score: score,
+    totalIssues: issues.length,
+    breakdown: {
+      errors: errorCount,
+      warnings: warningCount,
+      info: infoCount
+    },
+    recommendation: score >= 80 
+      ? 'Code quality is excellent! Keep up the good work.' 
+      : score >= 60 
+      ? 'Good code quality with room for minor improvements.'
+      : 'Consider addressing the identified issues to improve code quality.'
+  };
+}
+
 // Routes
 app.get('/auth/github', passport.authenticate('github', { scope: ['user:email', 'repo'] }));
 
@@ -461,6 +786,42 @@ app.get('/api/github/file/:owner/:repo', requireAuth, async (req, res) => {
     res.status(error.status || 500).json({ 
       message: 'Failed to fetch file content',
       error: error.message 
+    });
+  }
+});
+
+// AI-Powered Code Analysis Endpoint
+app.post('/api/analyze', async (req, res) => {
+  console.log('Code analysis request received');
+  
+  const { code } = req.body;
+  
+  if (!code || typeof code !== 'string') {
+    return res.status(400).json({ 
+      message: 'Code content is required for analysis' 
+    });
+  }
+
+  try {
+    // Perform comprehensive code analysis
+    const analysis = analyzeCode(code);
+    
+    console.log('Code analysis completed:', {
+      linesOfCode: analysis.metrics.linesOfCode,
+      issuesFound: analysis.issues.length,
+      score: analysis.score
+    });
+    
+    res.json({
+      message: 'Code analysis completed successfully',
+      analysis: analysis
+    });
+    
+  } catch (error: any) {
+    console.error('Code analysis error:', error.message);
+    res.status(500).json({
+      message: 'Code analysis failed',
+      error: error.message
     });
   }
 });
