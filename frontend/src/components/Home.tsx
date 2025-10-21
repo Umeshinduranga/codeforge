@@ -21,28 +21,57 @@ const Home = () => {
             </div>
             
             <h1 className={styles.heroTitle}>
-              <span className={styles.titleMain}>Revit</span>
-              <span className={styles.titleSub}>CodeForge</span>
+              <span className={styles.titleMain}>CodeForge</span>
+              <span className={styles.titleGradient}>Revolution</span>
             </h1>
             
             <p className={styles.heroSubtitle}>
-              Experience collaborative coding like never before. Real-time synchronization, 
-              seamless GitHub integration, and AI-powered analysis. Build the future together 
-              with cutting-edge developer tools.
+              Transform your coding experience with <strong>real-time collaboration</strong>, 
+              intelligent <strong>AI analysis</strong>, and seamless <strong>GitHub integration</strong>. 
+              Join thousands of developers building the future, one line at a time.
             </p>
+            
+            <div className={styles.heroTags}>
+              <span className={styles.heroTag}>
+                <svg className={styles.tagIcon} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M6.267 3.455a3.066 3.066 0 001.745-.723 3.066 3.066 0 013.976 0 3.066 3.066 0 001.745.723 3.066 3.066 0 012.812 2.812c.051.643.304 1.254.723 1.745a3.066 3.066 0 010 3.976 3.066 3.066 0 00-.723 1.745 3.066 3.066 0 01-2.812 2.812 3.066 3.066 0 00-1.745.723 3.066 3.066 0 01-3.976 0 3.066 3.066 0 00-1.745-.723 3.066 3.066 0 01-2.812-2.812 3.066 3.066 0 00-.723-1.745 3.066 3.066 0 010-3.976 3.066 3.066 0 00.723-1.745 3.066 3.066 0 012.812-2.812zm7.44 5.252a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Free & Open Source
+              </span>
+              <span className={styles.heroTag}>
+                <svg className={styles.tagIcon} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M11.3 1.046A1 1 0 0112 2v5h4a1 1 0 01.82 1.573l-7 10A1 1 0 018 18v-5H4a1 1 0 01-.82-1.573l7-10a1 1 0 011.12-.38z" clipRule="evenodd" />
+                </svg>
+                Lightning Fast
+              </span>
+              <span className={styles.heroTag}>
+                <svg className={styles.tagIcon} fill="currentColor" viewBox="0 0 20 20">
+                  <path fillRule="evenodd" d="M2.166 4.999A11.954 11.954 0 0010 1.944 11.954 11.954 0 0017.834 5c.11.65.166 1.32.166 2.001 0 5.225-3.34 9.67-8 11.317C5.34 16.67 2 12.225 2 7c0-.682.057-1.35.166-2.001zm11.541 3.708a1 1 0 00-1.414-1.414L9 10.586 7.707 9.293a1 1 0 00-1.414 1.414l2 2a1 1 0 001.414 0l4-4z" clipRule="evenodd" />
+                </svg>
+                Enterprise Security
+              </span>
+            </div>
             
             <div className={styles.heroStats}>
               <div className={styles.stat}>
-                <span className={styles.statNumber}>10K+</span>
-                <span className={styles.statLabel}>Developers</span>
+                <div className={styles.statIcon}>👥</div>
+                <span className={styles.statNumber}>15K+</span>
+                <span className={styles.statLabel}>Active Developers</span>
               </div>
               <div className={styles.stat}>
-                <span className={styles.statNumber}>50K+</span>
-                <span className={styles.statLabel}>Projects</span>
+                <div className={styles.statIcon}>🚀</div>
+                <span className={styles.statNumber}>100K+</span>
+                <span className={styles.statLabel}>Projects Built</span>
               </div>
               <div className={styles.stat}>
+                <div className={styles.statIcon}>⚡</div>
                 <span className={styles.statNumber}>99.9%</span>
-                <span className={styles.statLabel}>Uptime</span>
+                <span className={styles.statLabel}>Uptime SLA</span>
+              </div>
+              <div className={styles.stat}>
+                <div className={styles.statIcon}>⭐</div>
+                <span className={styles.statNumber}>4.9/5</span>
+                <span className={styles.statLabel}>User Rating</span>
               </div>
             </div>
             
@@ -195,12 +224,23 @@ const Home = () => {
             <div className={styles.ctaGlow}></div>
           </div>
           <div className={styles.ctaContent}>
+            <div className={styles.ctaBadge}>
+              <span className={styles.ctaBadgeIcon}>🎉</span>
+              <span>No Credit Card Required</span>
+            </div>
             <h2 className={styles.ctaTitle}>
-              Ready to Transform Your Development Workflow?
+              Ready to <span className={styles.ctaGradient}>Supercharge</span> Your Coding?
             </h2>
             <p className={styles.ctaSubtitle}>
-              Join thousands of developers who are already building the future with Revit
+              Join 15,000+ developers building incredible projects with CodeForge. 
+              Start coding in seconds, no setup required. Free forever for individuals.
             </p>
+            <div className={styles.ctaFeatures}>
+              <span className={styles.ctaFeature}>✓ Real-time Collaboration</span>
+              <span className={styles.ctaFeature}>✓ AI Code Analysis</span>
+              <span className={styles.ctaFeature}>✓ GitHub Integration</span>
+              <span className={styles.ctaFeature}>✓ 24/7 Support</span>
+            </div>
             <div className={styles.ctaButtons}>
               <Link to="/editor" className={styles.ctaButton}>
                 <span>Get Started Free</span>
