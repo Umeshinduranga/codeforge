@@ -19,6 +19,29 @@ interface User {
 const userStore: Map<string, User> = new Map();
 
 dotenv.config();
+
+// Validate required environment variables
+const requiredEnvVars = [
+  'GITHUB_CLIENT_ID',
+  'GITHUB_CLIENT_SECRET',
+  'GITHUB_CALLBACK_URL',
+  'SESSION_SECRET'
+];
+
+const missingEnvVars = requiredEnvVars.filter(varName => !process.env[varName]);
+if (missingEnvVars.length > 0) {
+  console.error('❌ Missing required environment variables:', missingEnvVars.join(', '));
+  console.error('Please set these variables in your .env file or environment');
+  process.exit(1);
+}
+
+// Log configuration (without sensitive data)
+console.log('🚀 Starting server with configuration:');
+console.log('  - Node Environment:', process.env.NODE_ENV || 'development');
+console.log('  - Frontend URL:', process.env.FRONTEND_URL || 'http://localhost:3000');
+console.log('  - Port:', process.env.PORT || 5000);
+console.log('  - GitHub Callback:', process.env.GITHUB_CALLBACK_URL);
+
 const app = express();
 const PORT = process.env.PORT || 5000;
 
@@ -28,15 +51,16 @@ const sessionMiddleware = session({
   resave: false,
   saveUninitialized: false,
   cookie: {
-    secure: false, // Set to true in production with HTTPS
+    secure: process.env.NODE_ENV === 'production', // Enable secure cookies in production
     httpOnly: true,
     maxAge: 1000 * 60 * 60 * 24, // 24 hours
+    sameSite: process.env.NODE_ENV === 'production' ? 'none' : 'lax', // Required for cross-site cookies
   },
 });
 
 // Middleware
 app.use(cors({ 
-  origin: 'http://localhost:3000', 
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000', 
   credentials: true 
 }));
 app.use(express.json());
@@ -968,7 +992,7 @@ app.post('/api/github/create-branch', requireAuth, async (req, res) => {
 const server = require('http').createServer(app);
 const io = new Server(server, {
   cors: {
-    origin: 'http://localhost:3000',
+    origin: process.env.FRONTEND_URL || 'http://localhost:3000',
     methods: ['GET', 'POST'],
     credentials: true,
   },
@@ -998,23 +1022,165 @@ io.use((socket, next) => {
   next();
 });
 
+// Store active users in each room
+const activeRooms = new Map<string, Map<string, any>>();
+
 io.on('connection', (socket) => {
   const user = socket.data.user;
-  console.log('Socket connected:', user ? user.username : 'Anonymous', 'ID:', socket.id);
+  const username = user ? user.username : `Guest_${socket.id.substring(0, 6)}`;
+  const avatarUrl = user ? user.avatarUrl : undefined;
+  
+  console.log('✅ Socket connected:', username, 'ID:', socket.id);
 
-  socket.on('codeChange', (data) => {
-    console.log('Code change from:', user ? user.username : 'Anonymous');
-    // Add user info to the broadcast
-    socket.broadcast.emit('codeChange', {
-      ...data,
-      user: user ? user.username : 'Anonymous'
+  // Join a collaboration room (based on repository)
+  socket.on('joinRoom', (data: { room: string }) => {
+    const { room } = data;
+    socket.join(room);
+    
+    // Initialize room if it doesn't exist
+    if (!activeRooms.has(room)) {
+      activeRooms.set(room, new Map());
+    }
+    
+    // Add user to room
+    const roomUsers = activeRooms.get(room)!;
+    roomUsers.set(socket.id, {
+      id: socket.id,
+      username,
+      avatarUrl,
+      color: getRandomColor(),
+      cursor: null
+    });
+    
+    console.log(`👥 ${username} joined room: ${room}`);
+    
+    // Notify others in the room
+    socket.to(room).emit('userJoined', {
+      id: socket.id,
+      username,
+      avatarUrl,
+      color: roomUsers.get(socket.id)?.color
+    });
+    
+    // Send current users to the new user
+    const users = Array.from(roomUsers.values());
+    socket.emit('roomUsers', users);
+    
+    // Broadcast updated user list to all in room
+    io.to(room).emit('roomUsers', users);
+  });
+
+  // Handle code changes in a specific room
+  socket.on('codeChange', (data: { code: string; room: string; user?: string }) => {
+    const { room, code } = data;
+    console.log(`📝 Code change from ${username} in room: ${room}`);
+    
+    // Broadcast to others in the same room
+    socket.to(room).emit('codeChange', {
+      code,
+      user: username,
+      socketId: socket.id
     });
   });
 
+  // Handle cursor position updates
+  socket.on('cursorMove', (data: { room: string; position: any }) => {
+    const { room, position } = data;
+    
+    // Update cursor in room
+    const roomUsers = activeRooms.get(room);
+    if (roomUsers && roomUsers.has(socket.id)) {
+      const userInfo = roomUsers.get(socket.id);
+      userInfo.cursor = position;
+      roomUsers.set(socket.id, userInfo);
+    }
+    
+    // Broadcast cursor position to others in room
+    socket.to(room).emit('cursorMove', {
+      socketId: socket.id,
+      username,
+      position,
+      color: roomUsers?.get(socket.id)?.color
+    });
+  });
+
+  // Handle selection updates
+  socket.on('selectionChange', (data: { room: string; selection: any }) => {
+    const { room, selection } = data;
+    
+    // Broadcast selection to others in room
+    socket.to(room).emit('selectionChange', {
+      socketId: socket.id,
+      username,
+      selection,
+      color: activeRooms.get(room)?.get(socket.id)?.color
+    });
+  });
+
+  // Handle typing indicator
+  socket.on('typing', (data: { room: string; isTyping: boolean }) => {
+    const { room, isTyping } = data;
+    
+    socket.to(room).emit('userTyping', {
+      socketId: socket.id,
+      username,
+      isTyping
+    });
+  });
+
+  // Leave room
+  socket.on('leaveRoom', (data: { room: string }) => {
+    const { room } = data;
+    handleUserLeaveRoom(socket, room, username);
+  });
+
+  // Handle disconnect
   socket.on('disconnect', () => {
-    console.log('Socket disconnected:', user ? user.username : 'Anonymous');
+    console.log('❌ Socket disconnected:', username);
+    
+    // Remove user from all rooms
+    activeRooms.forEach((roomUsers, room) => {
+      if (roomUsers.has(socket.id)) {
+        handleUserLeaveRoom(socket, room, username);
+      }
+    });
   });
 });
+
+// Helper function to handle user leaving room
+function handleUserLeaveRoom(socket: any, room: string, username: string) {
+  const roomUsers = activeRooms.get(room);
+  if (roomUsers) {
+    roomUsers.delete(socket.id);
+    console.log(`👋 ${username} left room: ${room}`);
+    
+    // Notify others in the room
+    socket.to(room).emit('userLeft', {
+      socketId: socket.id,
+      username
+    });
+    
+    // Update user list for room
+    const users = Array.from(roomUsers.values());
+    io.to(room).emit('roomUsers', users);
+    
+    // Clean up empty rooms
+    if (roomUsers.size === 0) {
+      activeRooms.delete(room);
+      console.log(`🗑️ Room deleted: ${room} (empty)`);
+    }
+  }
+  socket.leave(room);
+}
+
+// Helper function to generate random colors for users
+function getRandomColor(): string {
+  const colors = [
+    '#FF6B6B', '#4ECDC4', '#45B7D1', '#FFA07A', '#98D8C8',
+    '#F7DC6F', '#BB8FCE', '#85C1E2', '#F8B739', '#52B788'
+  ];
+  return colors[Math.floor(Math.random() * colors.length)];
+}
 
 server.listen(PORT, () => {
   console.log(`Server running on port ${PORT} with Socket.io`);
