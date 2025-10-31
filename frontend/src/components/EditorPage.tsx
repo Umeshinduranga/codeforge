@@ -6,12 +6,21 @@ import io from 'socket.io-client';
 import FileBrowser from './FileBrowser';
 import AnalysisModal from './AnalysisModal';
 import styles from './EditorPage.module.css';
+import { API_ENDPOINTS, SOCKET_URL } from '../config/api';
 
 interface User {
   githubId: string;
   username: string;
   avatarUrl?: string;
   isAuthenticated: boolean;
+}
+
+interface CollaboratorUser {
+  id: string;
+  username: string;
+  avatarUrl?: string;
+  color: string;
+  cursor?: { lineNumber: number; column: number };
 }
 
 interface Repository {
@@ -43,6 +52,10 @@ const EditorPage = () => {
   const [showAnalysisModal, setShowAnalysisModal] = useState(false);
   const [analysisResult, setAnalysisResult] = useState(null);
   const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [collaborators, setCollaborators] = useState<CollaboratorUser[]>([]);
+  const [currentRoom, setCurrentRoom] = useState<string>('');
+  const [remoteCursors, setRemoteCursors] = useState<Map<string, any>>(new Map());
+  const [userTyping, setUserTyping] = useState<Set<string>>(new Set());
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const editorRef = useRef<any>(null);
   const navigate = useNavigate();
@@ -71,12 +84,24 @@ const EditorPage = () => {
       setRepo(selectedRepo.full_name);
       setBranch(selectedRepo.default_branch);
       setBranchCreated(false);
+      
+      // Leave old room and join new room
+      if (socketRef.current && currentRoom) {
+        socketRef.current.emit('leaveRoom', { room: currentRoom });
+      }
+      
+      const newRoom = selectedRepo.full_name;
+      setCurrentRoom(newRoom);
+      
+      if (socketRef.current) {
+        socketRef.current.emit('joinRoom', { room: newRoom });
+      }
     }
   }, [selectedRepo]);
 
   const checkAuthStatus = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/user', { 
+      const response = await axios.get(API_ENDPOINTS.USER_INFO, { 
         withCredentials: true 
       });
       setUser(response.data);
@@ -90,8 +115,8 @@ const EditorPage = () => {
   
   const fetchRepositories = async () => {
     try {
-      const response = await axios.get('http://localhost:5000/api/github/repos', {
-        withCredentials: true
+      const response = await axios.get(API_ENDPOINTS.REPOSITORIES, {
+        withCredentials: true,
       });
       setRepositories(response.data);
       console.log('Repositories fetched:', response.data.length);
@@ -102,23 +127,74 @@ const EditorPage = () => {
   };
 
   const initializeSocket = () => {
-    socketRef.current = io('http://localhost:5000', { 
+    socketRef.current = io(SOCKET_URL, { 
       withCredentials: true 
     });
     
     const socket = socketRef.current;
 
     socket.on('connect', () => {
-      console.log('Connected to socket server');
+      console.log('✅ Socket connected:', socket.id);
+      
+      // Join a room when connected (use repo as room or default)
+      const room = selectedRepo?.full_name || 'default-room';
+      setCurrentRoom(room);
+      socket.emit('joinRoom', { room });
     });
 
-    socket.on('codeChange', (data) => {
+    socket.on('codeChange', (data: { code: string; user: string; socketId: string }) => {
       setCode(data.code);
       setLastEditor(data.user || 'Anonymous');
     });
 
+    socket.on('roomUsers', (users: CollaboratorUser[]) => {
+      // Filter out current user
+      const otherUsers = users.filter(u => u.id !== socket.id);
+      setCollaborators(otherUsers);
+      console.log('👥 Room users updated:', users.length);
+    });
+
+    socket.on('userJoined', (user: CollaboratorUser) => {
+      console.log('👤 User joined:', user.username);
+      setCollaborators(prev => [...prev, user]);
+    });
+
+    socket.on('userLeft', (data: { socketId: string; username: string }) => {
+      console.log('👋 User left:', data.username);
+      setCollaborators(prev => prev.filter(u => u.id !== data.socketId));
+      setRemoteCursors(prev => {
+        const newCursors = new Map(prev);
+        newCursors.delete(data.socketId);
+        return newCursors;
+      });
+    });
+
+    socket.on('cursorMove', (data: { socketId: string; username: string; position: any; color: string }) => {
+      setRemoteCursors(prev => {
+        const newCursors = new Map(prev);
+        newCursors.set(data.socketId, {
+          position: data.position,
+          username: data.username,
+          color: data.color
+        });
+        return newCursors;
+      });
+    });
+
+    socket.on('userTyping', (data: { socketId: string; username: string; isTyping: boolean }) => {
+      setUserTyping(prev => {
+        const newTyping = new Set(prev);
+        if (data.isTyping) {
+          newTyping.add(data.username);
+        } else {
+          newTyping.delete(data.username);
+        }
+        return newTyping;
+      });
+    });
+
     socket.on('connect_error', (error) => {
-      console.error('Socket connection error:', error);
+      console.error('❌ Socket connection error:', error);
     });
   };
 
@@ -126,22 +202,73 @@ const EditorPage = () => {
     const newCode = value || '';
     setCode(newCode);
     
-    if (socketRef.current && user) {
+    if (socketRef.current && user && currentRoom) {
       socketRef.current.emit('codeChange', { 
         code: newCode, 
-        user: user.username 
+        user: user.username,
+        room: currentRoom
       });
+      
+      // Emit typing indicator
+      socketRef.current.emit('typing', {
+        room: currentRoom,
+        isTyping: true
+      });
+      
+      // Clear typing indicator after 1 second
+      setTimeout(() => {
+        if (socketRef.current && currentRoom) {
+          socketRef.current.emit('typing', {
+            room: currentRoom,
+            isTyping: false
+          });
+        }
+      }, 1000);
     }
+  };
+
+  const handleEditorMount = (editor: any) => {
+    editorRef.current = editor;
+    
+    // Track cursor position changes
+    editor.onDidChangeCursorPosition((e: any) => {
+      if (socketRef.current && currentRoom) {
+        const position = e.position;
+        socketRef.current.emit('cursorMove', {
+          room: currentRoom,
+          position: {
+            lineNumber: position.lineNumber,
+            column: position.column
+          }
+        });
+      }
+    });
+    
+    // Track selection changes
+    editor.onDidChangeCursorSelection((e: any) => {
+      if (socketRef.current && currentRoom) {
+        const selection = e.selection;
+        socketRef.current.emit('selectionChange', {
+          room: currentRoom,
+          selection: {
+            startLineNumber: selection.startLineNumber,
+            startColumn: selection.startColumn,
+            endLineNumber: selection.endLineNumber,
+            endColumn: selection.endColumn
+          }
+        });
+      }
+    });
   };
 
   const handleLogin = () => {
     // Redirect to GitHub OAuth
-    window.location.href = 'http://localhost:5000/auth/github';
+    window.location.href = API_ENDPOINTS.GITHUB_AUTH;
   };
 
   const handleLogout = () => {
     // Redirect to logout endpoint
-    window.location.href = 'http://localhost:5000/logout';
+    window.location.href = `${API_ENDPOINTS.GITHUB_AUTH.replace('/auth/github', '')}/logout`;
   };
 
   const createRevitBranch = async () => {
@@ -153,7 +280,7 @@ const EditorPage = () => {
     setIsBranchCreating(true);
     try {
       const response = await axios.post(
-        'http://localhost:5000/api/github/create-branch',
+        API_ENDPOINTS.CREATE_BRANCH,
         { repo },
         { withCredentials: true }
       );
@@ -187,7 +314,7 @@ const EditorPage = () => {
 
     try {
       const response = await axios.post(
-        'http://localhost:5000/api/github/push', 
+        API_ENDPOINTS.PUSH_CODE, 
         { 
           repo, 
           filePath, 
@@ -216,7 +343,7 @@ const EditorPage = () => {
       const code = editorRef.current.getValue();
       const token = localStorage.getItem('token');
       
-      const response = await fetch('http://localhost:5000/api/analyze', {
+      const response = await fetch(API_ENDPOINTS.ANALYZE_CODE, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -430,7 +557,7 @@ const EditorPage = () => {
                   <button
                     onClick={async () => {
                       try {
-                        const response = await axios.get('http://localhost:5000/api/github/test', {
+                        const response = await axios.get(`${API_ENDPOINTS.REPOSITORIES.replace('/repos', '/test')}`, {
                           withCredentials: true
                         });
                         alert(`GitHub API Test Success: ${JSON.stringify(response.data, null, 2)}`);
@@ -504,13 +631,50 @@ const EditorPage = () => {
         </div>
 
         <div className={styles.editorContainer}>
+          {/* Collaborators Panel */}
+          {collaborators.length > 0 && (
+            <div className={styles.collaboratorsPanel}>
+              <div className={styles.collaboratorsHeader}>
+                <span className={styles.collaboratorsIcon}>👥</span>
+                <span className={styles.collaboratorsTitle}>
+                  Active Collaborators ({collaborators.length})
+                </span>
+              </div>
+              <div className={styles.collaboratorsList}>
+                {collaborators.map((collab) => (
+                  <div key={collab.id} className={styles.collaboratorItem}>
+                    <div 
+                      className={styles.collaboratorAvatar}
+                      style={{ 
+                        backgroundColor: collab.color,
+                        backgroundImage: collab.avatarUrl ? `url(${collab.avatarUrl})` : 'none'
+                      }}
+                    >
+                      {!collab.avatarUrl && collab.username.charAt(0).toUpperCase()}
+                    </div>
+                    <div className={styles.collaboratorInfo}>
+                      <span className={styles.collaboratorName}>{collab.username}</span>
+                      {userTyping.has(collab.username) && (
+                        <span className={styles.typingIndicator}>typing...</span>
+                      )}
+                    </div>
+                    <div 
+                      className={styles.collaboratorColorDot}
+                      style={{ backgroundColor: collab.color }}
+                    />
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          
           <div className={styles.editorWrapper}>
             <Editor
               height="500px"
               language={getEditorLanguage(filePath)}
               value={code}
               onChange={handleEditorChange}
-              onMount={(editor) => { editorRef.current = editor; }}
+              onMount={handleEditorMount}
               theme="vs-dark"
               options={{
                 fontSize: 14,
@@ -540,6 +704,11 @@ const EditorPage = () => {
           
           <div className={styles.lastEditor}>
             Last edit by: <strong>{lastEditor}</strong>
+            {currentRoom && (
+              <span className={styles.roomInfo}>
+                {' • '}Room: <strong>{currentRoom}</strong>
+              </span>
+            )}
           </div>
         </div>
 
