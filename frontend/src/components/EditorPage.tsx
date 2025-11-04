@@ -23,6 +23,17 @@ interface CollaboratorUser {
   cursor?: { lineNumber: number; column: number };
 }
 
+interface CodeComment {
+  id: string;
+  lineNumber: number;
+  text: string;
+  author: string;
+  authorAvatar?: string;
+  authorColor: string;
+  timestamp: number;
+  resolved: boolean;
+}
+
 interface Repository {
   id: number;
   name: string;
@@ -56,6 +67,11 @@ const EditorPage = () => {
   const [currentRoom, setCurrentRoom] = useState<string>('');
   const [remoteCursors, setRemoteCursors] = useState<Map<string, any>>(new Map());
   const [userTyping, setUserTyping] = useState<Set<string>>(new Set());
+  const [comments, setComments] = useState<CodeComment[]>([]);
+  const [showCommentInput, setShowCommentInput] = useState(false);
+  const [commentLineNumber, setCommentLineNumber] = useState<number | null>(null);
+  const [commentText, setCommentText] = useState('');
+  const [selectedLineDecorations, setSelectedLineDecorations] = useState<string[]>([]);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const editorRef = useRef<any>(null);
   const navigate = useNavigate();
@@ -193,6 +209,23 @@ const EditorPage = () => {
       });
     });
 
+    socket.on('newComment', (comment: CodeComment) => {
+      console.log('💬 New comment received:', comment);
+      setComments(prev => [...prev, comment]);
+    });
+
+    socket.on('commentResolved', (data: { commentId: string }) => {
+      console.log('✅ Comment resolved:', data.commentId);
+      setComments(prev => 
+        prev.map(c => c.id === data.commentId ? { ...c, resolved: true } : c)
+      );
+    });
+
+    socket.on('commentDeleted', (data: { commentId: string }) => {
+      console.log('🗑️ Comment deleted:', data.commentId);
+      setComments(prev => prev.filter(c => c.id !== data.commentId));
+    });
+
     socket.on('connect_error', (error) => {
       console.error('❌ Socket connection error:', error);
     });
@@ -230,6 +263,21 @@ const EditorPage = () => {
   const handleEditorMount = (editor: any) => {
     editorRef.current = editor;
     
+    // Add context menu for adding comments
+    editor.addAction({
+      id: 'add-comment',
+      label: '💬 Add Comment',
+      contextMenuGroupId: 'navigation',
+      contextMenuOrder: 1.5,
+      run: (ed: any) => {
+        const position = ed.getPosition();
+        if (position) {
+          setCommentLineNumber(position.lineNumber);
+          setShowCommentInput(true);
+        }
+      }
+    });
+    
     // Track cursor position changes
     editor.onDidChangeCursorPosition((e: any) => {
       if (socketRef.current && currentRoom) {
@@ -259,6 +307,95 @@ const EditorPage = () => {
         });
       }
     });
+  };
+
+  const addComment = () => {
+    if (!commentText.trim() || commentLineNumber === null || !user || !currentRoom) {
+      return;
+    }
+
+    const newComment: CodeComment = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      lineNumber: commentLineNumber,
+      text: commentText.trim(),
+      author: user.username,
+      authorAvatar: user.avatarUrl,
+      authorColor: collaborators.find(c => c.username === user.username)?.color || '#4ECDC4',
+      timestamp: Date.now(),
+      resolved: false
+    };
+
+    // Add locally
+    setComments(prev => [...prev, newComment]);
+
+    // Broadcast to others
+    if (socketRef.current) {
+      socketRef.current.emit('addComment', {
+        room: currentRoom,
+        comment: newComment
+      });
+    }
+
+    // Reset form
+    setCommentText('');
+    setShowCommentInput(false);
+    setCommentLineNumber(null);
+  };
+
+  const resolveComment = (commentId: string) => {
+    setComments(prev => 
+      prev.map(c => c.id === commentId ? { ...c, resolved: true } : c)
+    );
+
+    if (socketRef.current && currentRoom) {
+      socketRef.current.emit('resolveComment', {
+        room: currentRoom,
+        commentId
+      });
+    }
+  };
+
+  const deleteComment = (commentId: string) => {
+    setComments(prev => prev.filter(c => c.id !== commentId));
+
+    if (socketRef.current && currentRoom) {
+      socketRef.current.emit('deleteComment', {
+        room: currentRoom,
+        commentId
+      });
+    }
+  };
+
+  const scrollToLine = (lineNumber: number) => {
+    if (editorRef.current) {
+      editorRef.current.revealLineInCenter(lineNumber);
+      editorRef.current.setPosition({ lineNumber, column: 1 });
+      editorRef.current.focus();
+
+      // Highlight the line temporarily
+      const monaco = (window as any).monaco;
+      if (monaco) {
+        const decorations = editorRef.current.deltaDecorations(selectedLineDecorations, [
+          {
+            range: new monaco.Range(lineNumber, 1, lineNumber, 1),
+            options: {
+              isWholeLine: true,
+              className: 'commentedLine',
+              glyphMarginClassName: 'commentGlyph'
+            }
+          }
+        ]);
+        setSelectedLineDecorations(decorations);
+
+        // Remove highlight after 2 seconds
+        setTimeout(() => {
+          if (editorRef.current) {
+            editorRef.current.deltaDecorations(decorations, []);
+            setSelectedLineDecorations([]);
+          }
+        }, 2000);
+      }
+    }
   };
 
   const handleLogin = () => {
@@ -710,6 +847,130 @@ const EditorPage = () => {
               </span>
             )}
           </div>
+
+          {/* Comments Panel */}
+          {comments.length > 0 && (
+            <div className={styles.commentsPanel}>
+              <div className={styles.commentsPanelHeader}>
+                <span className={styles.commentsPanelIcon}>💬</span>
+                <span className={styles.commentsPanelTitle}>
+                  Code Comments ({comments.filter(c => !c.resolved).length})
+                </span>
+              </div>
+              <div className={styles.commentsList}>
+                {comments
+                  .sort((a, b) => a.lineNumber - b.lineNumber)
+                  .map((comment) => (
+                    <div 
+                      key={comment.id} 
+                      className={`${styles.commentItem} ${comment.resolved ? styles.commentResolved : ''}`}
+                    >
+                      <div className={styles.commentHeader}>
+                        <div className={styles.commentAuthor}>
+                          <div 
+                            className={styles.commentAvatar}
+                            style={{ 
+                              backgroundColor: comment.authorColor,
+                              backgroundImage: comment.authorAvatar ? `url(${comment.authorAvatar})` : 'none'
+                            }}
+                          >
+                            {!comment.authorAvatar && comment.author.charAt(0).toUpperCase()}
+                          </div>
+                          <span className={styles.commentAuthorName}>{comment.author}</span>
+                        </div>
+                        <button
+                          onClick={() => scrollToLine(comment.lineNumber)}
+                          className={styles.commentLineButton}
+                          title="Jump to line"
+                        >
+                          Line {comment.lineNumber}
+                        </button>
+                      </div>
+                      <div className={styles.commentText}>{comment.text}</div>
+                      <div className={styles.commentFooter}>
+                        <span className={styles.commentTime}>
+                          {new Date(comment.timestamp).toLocaleTimeString()}
+                        </span>
+                        {!comment.resolved && user?.username === comment.author && (
+                          <div className={styles.commentActions}>
+                            <button
+                              onClick={() => resolveComment(comment.id)}
+                              className={styles.commentActionButton}
+                              title="Resolve comment"
+                            >
+                              ✓ Resolve
+                            </button>
+                            <button
+                              onClick={() => deleteComment(comment.id)}
+                              className={styles.commentActionButton}
+                              title="Delete comment"
+                            >
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        )}
+                        {comment.resolved && (
+                          <span className={styles.resolvedBadge}>✓ Resolved</span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+              </div>
+            </div>
+          )}
+
+          {/* Comment Input Modal */}
+          {showCommentInput && (
+            <div className={styles.commentModal}>
+              <div className={styles.commentModalContent}>
+                <div className={styles.commentModalHeader}>
+                  <h3>💬 Add Comment on Line {commentLineNumber}</h3>
+                  <button 
+                    onClick={() => {
+                      setShowCommentInput(false);
+                      setCommentText('');
+                      setCommentLineNumber(null);
+                    }}
+                    className={styles.commentModalClose}
+                  >
+                    ✕
+                  </button>
+                </div>
+                <textarea
+                  value={commentText}
+                  onChange={(e) => setCommentText(e.target.value)}
+                  placeholder="Write your comment or suggestion..."
+                  className={styles.commentTextarea}
+                  autoFocus
+                  rows={4}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && e.ctrlKey) {
+                      addComment();
+                    }
+                  }}
+                />
+                <div className={styles.commentModalFooter}>
+                  <button
+                    onClick={() => {
+                      setShowCommentInput(false);
+                      setCommentText('');
+                      setCommentLineNumber(null);
+                    }}
+                    className={styles.commentCancelButton}
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={addComment}
+                    disabled={!commentText.trim()}
+                    className={styles.commentSubmitButton}
+                  >
+                    Add Comment (Ctrl+Enter)
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
         <div className={styles.actionButtons}>
