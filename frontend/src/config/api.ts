@@ -11,6 +11,7 @@ export const API_ENDPOINTS = {
   FILE_CONTENT: `${API_URL}/api/github/file`,
   REPO_CONTENTS: `${API_URL}/api/github/repos`,
   ANALYZE_CODE: `${API_URL}/api/analyze`,
+  EXECUTE_CODE: `${API_URL}/api/execute`,
   GITHUB_AUTH: `${API_URL}/auth/github`,
 };
 
