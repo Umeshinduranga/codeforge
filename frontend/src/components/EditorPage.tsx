@@ -5,6 +5,7 @@ import { useNavigate } from 'react-router-dom';
 import io from 'socket.io-client';
 import FileBrowser from './FileBrowser';
 import AnalysisModal from './AnalysisModal';
+import Terminal from './Terminal';
 import styles from './EditorPage.module.css';
 import { API_ENDPOINTS, SOCKET_URL } from '../config/api';
 
@@ -72,6 +73,7 @@ const EditorPage = () => {
   const [commentLineNumber, setCommentLineNumber] = useState<number | null>(null);
   const [commentText, setCommentText] = useState('');
   const [selectedLineDecorations, setSelectedLineDecorations] = useState<string[]>([]);
+  const [showTerminal, setShowTerminal] = useState(false);
   const socketRef = useRef<ReturnType<typeof io> | null>(null);
   const editorRef = useRef<any>(null);
   const navigate = useNavigate();
@@ -997,6 +999,16 @@ const EditorPage = () => {
           </button>
           
           <button 
+            onClick={() => setShowTerminal(!showTerminal)}
+            className={`${styles.actionButton} ${styles.terminalButton} ${showTerminal ? styles.active : ''}`}
+          >
+            <svg className={styles.buttonIcon} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            {showTerminal ? 'Hide Terminal' : 'Show Terminal'}
+          </button>
+          
+          <button 
             onClick={() => navigate('/')}
             className={`${styles.actionButton} ${styles.backButton}`}
           >
@@ -1022,6 +1034,17 @@ const EditorPage = () => {
             analysis={analysisResult}
             onClose={() => setShowAnalysisModal(false)}
           />
+        )}
+
+        {/* Terminal */}
+        {showTerminal && (
+          <div className={styles.terminalContainer}>
+            <Terminal
+              code={code}
+              language={getEditorLanguage(filePath)}
+              onClose={() => setShowTerminal(false)}
+            />
+          </div>
         )}
       </div>
     </div>
